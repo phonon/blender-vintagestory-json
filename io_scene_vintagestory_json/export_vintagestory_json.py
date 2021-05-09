@@ -1,6 +1,6 @@
 import bpy
 from bpy import context
-from mathutils import Vector, Euler, Matrix
+from mathutils import Vector, Euler, Quaternion, Matrix
 import math
 import numpy as np
 from math import inf
@@ -154,6 +154,44 @@ def clamp_rotation(r):
         r[2] += 360.0
     
     return r
+
+
+def get_reduced_rotation(rotation):
+    """Split rotation into all 90 deg rotations
+    and the residual.
+    """
+    residual_rotation = rotation.copy()
+    
+    # number of 90 degree steps
+    xsteps = 0
+    ysteps = 0
+    zsteps = 0
+    
+    # get sign of euler angles
+    rot_x_sign = sign(rotation.x)
+    rot_y_sign = sign(rotation.y)
+    rot_z_sign = sign(rotation.z)
+    
+    eps = 1e-6 # angle error range for floating point precision issues
+    
+    # included sign() in loop condition to prevent angle
+    # overflowing to other polarity
+    while abs(residual_rotation.x) > math.pi/2 - eps and sign(residual_rotation.x) == rot_x_sign:
+        angle = rot_x_sign * math.pi/2
+        residual_rotation.x -= angle
+        xsteps += rot_x_sign
+    while abs(residual_rotation.y) > math.pi/2 - eps and sign(residual_rotation.y) == rot_y_sign:
+        angle = rot_y_sign * math.pi/2
+        residual_rotation.y -= angle
+        ysteps += rot_y_sign
+    while abs(residual_rotation.z) > math.pi/4 - eps and sign(residual_rotation.z) == rot_z_sign:
+        angle = rot_z_sign * math.pi/2
+        residual_rotation.z -= angle
+        zsteps += rot_z_sign
+    
+    rotation_90deg = Euler((xsteps * math.pi/2, ysteps * math.pi/2, zsteps * math.pi/2), "XYZ")
+    
+    return residual_rotation, rotation_90deg
 
 
 class TextureInfo():
@@ -322,6 +360,7 @@ def generate_element(
     parent_cube_origin=None,     # parent cube "from" origin (coords in VintageStory space)
     parent_rotation_origin=None, # parent object rotation origin (coords in VintageStory space)
     export_uvs=True,             # export uvs
+    export_generated_texture=True,
 ):
     """Recursive function to generate output element from
     Blender object
@@ -355,17 +394,29 @@ def generate_element(
     for i, v in enumerate(mesh.vertices):
         v_local[0:3,i] = v.co
     
+    # ================================
+    # first reduce rotation to [-90, 90] by applying all 90 deg
+    # rotations directly to vertices
+    # ================================
+    residual_rotation, rotation_90deg = get_reduced_rotation(obj.rotation_euler)
+
+    mat_rotate_90deg = np.array(rotation_90deg.to_matrix())
+
+    # rotate axis of residual rotation
+    ax_angle, theta = residual_rotation.to_quaternion().to_axis_angle()
+    transformed_ax_angle = mat_rotate_90deg @ ax_angle
+    rotation_transformed = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
+
     # get min/max for to/from points
-    v_min = np.amin(v_local, axis=1)
-    v_max = np.amax(v_local, axis=1)
-            
-    # get rotation and clamp to [-360, 360]
-    rotation = obj.rotation_euler.copy()
-    rotation = clamp_rotation(np.array([
-        rotation.x * 180.0 / math.pi,
-        rotation.y * 180.0 / math.pi,
-        rotation.z * 180.0 / math.pi,
-    ]))
+    v_local_transformed = mat_rotate_90deg @ v_local
+    v_min = np.amin(v_local_transformed, axis=1)
+    v_max = np.amax(v_local_transformed, axis=1)
+    
+    rotation = np.array([
+        rotation_transformed.x * 180.0 / math.pi,
+        rotation_transformed.y * 180.0 / math.pi,
+        rotation_transformed.z * 180.0 / math.pi,
+    ])
 
     # change axis to vintage story y-up axis
     v_min = to_y_up(v_min)
@@ -422,8 +473,11 @@ def generate_element(
             break
 
         # stack + reshape to (6,3)
-        face_normal = np.array(face.normal)
-        face_normal_stacked = np.transpose(face_normal[..., np.newaxis], (1,0))
+        # face_normal = np.array(face.normal)
+        # face_normal_stacked = np.transpose(face_normal[..., np.newaxis], (1,0))
+        face_normal = face.normal
+        face_normal_transformed = mat_rotate_90deg @ face_normal
+        face_normal_stacked = np.transpose(face_normal_transformed[..., np.newaxis], (1,0))
         face_normal_stacked = np.tile(face_normal_stacked, (6,1))
 
         # get face direction string
@@ -433,7 +487,7 @@ def generate_element(
         face_texture = get_object_color(obj, face.material_index)
         
         # solid color tuple
-        if isinstance(face_texture, tuple) and generate_texture:
+        if isinstance(face_texture, tuple) and export_generated_texture:
             faces[d] = face_texture # replace face with color
             if model_colors is not None:
                 model_colors.add(face_texture)
@@ -463,7 +517,7 @@ def generate_element(
                 # vertices loops
                 # project 3d vertex loop onto 2d loop based on face normal,
                 # minecraft uv mapping starting corner experimentally determined
-                verts = [ v_local[:,v] for v in face.vertices ]
+                verts = [ v_local_transformed[:,v] for v in face.vertices ]
                 
                 if face_normal[0] > 0.5: # normal = (1, 0, 0)
                     verts = [ (v[1], v[2]) for v in verts ]

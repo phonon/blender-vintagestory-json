@@ -91,7 +91,7 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
     recenter_origin_z: FloatProperty(
         name="Recenter Z",
         description="Z export offset (in Blender coordinates)",
-        default=8,
+        default=0,
     )
 
     # ================================
