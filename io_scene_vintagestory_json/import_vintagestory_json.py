@@ -2,6 +2,7 @@ import os
 import json
 import numpy as np
 import math
+import time
 from math import inf
 import bpy
 from mathutils import Vector
@@ -139,6 +140,12 @@ def parse_element(
         child_blender_origin = parent_cube_origin - parent_rotation_origin + child_rotation_origin
         from_blender_local = from - child_rotation_origin
         to_blender_local = to - child_rotation_origin
+
+    Return tuple of:
+        obj,                   # new Blender object
+        local_cube_origin,     # local space "to" cube corner origin
+        new_cube_origin,       # global space cube corner origin
+        new_rotation_origin    # local space rotation (Blender) origin
     """
     # get cube min/max
     v_min = np.array([e["from"][2], e["from"][0], e["from"][1]])
@@ -274,7 +281,45 @@ def parse_element(
     # set name (choose whatever is available or "cube" if no name or comment is given)
     obj.name = e.get("name") or "cube"
 
-    return obj, new_cube_origin, new_rotation_origin
+    return obj, v_min, new_cube_origin, new_rotation_origin
+
+
+def parse_attachpoint(
+    e,                      # json element
+    parent_cube_origin,     # cube corner origin of parent
+):
+    """Load attachment point associated with a cube, convert
+    into a Blender empty object with special name:
+        "attach_AttachPointName"
+    where the suffix is the "code": "AttachPointName" in the element.
+    This format is used for exporting attachpoints from Blender.
+
+    Location in json is relative to cube origin not rotation origin.
+    For some reason json number is a string...wtf?
+    """
+    px = float(e.get("posX") or 0.0)
+    py = float(e.get("posY") or 0.0)
+    pz = float(e.get("posZ") or 0.0)
+
+    rx = float(e.get("rotationX") or 0.0)
+    ry = float(e.get("rotationY") or 0.0)
+    rz = float(e.get("rotationZ") or 0.0)
+
+    # get location, rotation converted to Blender space
+    location = np.array([
+        pz + parent_cube_origin[0],
+        px + parent_cube_origin[1],
+        py + parent_cube_origin[2],
+    ])
+    
+    rotation = math.pi / 180.0 * np.array([rz, rx, ry])
+
+    # create object
+    bpy.ops.object.empty_add(type="ARROWS", radius=1.0, location=location, rotation=rotation)
+    obj = bpy.context.active_object
+    obj.name = "attach_" + (e.get("code") or "attachpoint")
+
+    return obj
 
 
 def load_element(
@@ -287,9 +332,10 @@ def load_element(
     tex_width=16.0,
     tex_height=16.0,
     import_uvs=True,
+    stats=None,
 ):
     """Recursively load a geometry cuboid"""
-    obj, new_cube_origin, new_rotation_origin = parse_element(
+    obj, local_cube_origin, new_cube_origin, new_rotation_origin = parse_element(
         element,
         cube_origin,
         rotation_origin,
@@ -304,6 +350,25 @@ def load_element(
     if parent is not None:
         obj.parent = parent
     
+    # increment stats (debugging)
+    if stats:
+        stats.cubes += 1
+
+    # parse attach points
+    if "attachmentpoints" in element:
+        for attachpoint in element["attachmentpoints"]:
+            p = parse_attachpoint(
+                attachpoint,
+                local_cube_origin,
+            )
+            p.parent = obj
+            all_objects.append(p)
+            
+            # increment stats (debugging)
+            if stats:
+                stats.attachpoints += 1
+
+    # recursively load children
     if "children" in element:
         for child in element["children"]:
             load_element(
@@ -316,9 +381,19 @@ def load_element(
                 tex_width,
                 tex_height,
                 import_uvs,
+                stats=stats,
             )
 
     return obj
+
+
+class ImportStats():
+    """Track statistics on imported data"""
+    def __init__(self):
+        self.cubes = 0
+        self.attachpoints = 0
+        self.animations = 0
+        self.textures = 0
 
 
 def load(context,
@@ -327,8 +402,14 @@ def load(context,
          import_textures = True,          # import textures into materials
          translate_origin_by_8 = False,   # shift model by (-8, -8, -8)
          recenter_to_origin = True,       # recenter model to origin, overrides translate origin
-         **kwargs):
+         debug_stats=True,                # print statistics on imported models
+         **kwargs
+):
     """Main import function"""
+
+    # debug
+    t_start = time.clock()
+    stats = ImportStats() if debug_stats else None
 
     with open(filepath, "r") as f:
         data = json.load(f)
@@ -386,13 +467,17 @@ def load(context,
             filepath_tex = os.path.join(tex_base_path, *tex_path.split("/")) + ".png"
             textures[tex_name] = create_textured_principled_bsdf(tex_name, filepath_tex)
 
+            # update stats
+            if stats:
+                stats.textures += 1
+
         # map texture aliases
         for tex_name, tex_path in data["textures"].items():
             if tex_path[0] == "#":
                 tex_path = tex_path[1:]
                 if tex_path in textures:
                     textures[tex_name] = textures[tex_path]
-
+    
     # =============================================
     # recursively import geometry, uvs
     # =============================================
@@ -408,7 +493,8 @@ def load(context,
             textures,
             tex_width=tex_width,
             tex_height=tex_height,
-            import_uvs=True
+            import_uvs=True,
+            stats=stats,
         )
         root_objects.append(obj)
 
@@ -456,4 +542,14 @@ def load(context,
     for obj in all_objects:
         obj.select_set(True)
     
+    # print stats
+    if debug_stats:
+        t_end = time.clock()
+        dt = t_end - t_start
+        print("Imported .json in {}s".format(dt))
+        print("- Cubes: {}".format(stats.cubes))
+        print("- Attach Points: {}".format(stats.attachpoints))
+        print("- Textures: {}".format(stats.textures))
+        print("- Animations: {}".format(stats.animations))
+
     return {"FINISHED"}
