@@ -320,6 +320,7 @@ def parse_attachpoint(
     # create object
     bpy.ops.object.empty_add(type="ARROWS", radius=1.0, location=location, rotation=rotation)
     obj = bpy.context.active_object
+    obj.show_in_front = True
     obj.name = "attach_" + (e.get("code") or "attachpoint")
 
     return obj
@@ -335,7 +336,8 @@ def rebuild_hierarchy_with_bones(
     bpy.ops.object.mode_set(mode="OBJECT") # ensure correct starting context
     bpy.ops.object.add(type="ARMATURE", enter_editmode=True)
     armature = bpy.context.active_object
-    
+    armature.show_in_front = True
+
     for obj in root_objects:
         add_bone_to_armature_from_object(
             obj,

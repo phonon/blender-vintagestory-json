@@ -8,35 +8,6 @@ import posixpath # need "/" separator
 import os
 import json
 
-# minecraft model coordinates must be from [-16, 32] (48x48x48 volume)
-# -> 24 along each axis
-MAX_SIZE = 24
-
-# minecraft single axis rotations with discrete values
-# [-45, -22.5, 0, 22.5, 45]
-ROTATIONS = [
-    ("X", -45.0),
-    ("X", -22.5),
-    ("X",   0.0),
-    ("X",  22.5),
-    ("X",  45.0),
-    ("Y", -45.0),
-    ("Y", -22.5),
-#    ("Y",   0.0), 0 rotation, default to x
-    ("Y",  22.5),
-    ("Y",  45.0),
-    ("Z", -45.0),
-    ("Z", -22.5),
-#    ("Z",   0.0), 0 rotation, default to x
-    ("Z",  22.5),
-    ("Z",  45.0),
-]
-
-# generate all rotation matrices (15x3x3)
-MAT_ROTATIONS = np.zeros((len(ROTATIONS), 3, 3))
-for i, r in enumerate(ROTATIONS):
-    MAT_ROTATIONS[i,:,:] = np.array(Matrix.Rotation(math.radians(r[1]), 3, r[0]))
-
 # direction names for minecraft cube face UVs
 DIRECTIONS = np.array([
     "north",
