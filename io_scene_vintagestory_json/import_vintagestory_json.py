@@ -7,6 +7,9 @@ from math import inf
 import bpy
 from mathutils import Vector
 
+# convert deg to rad
+DEG_TO_RAD = math.pi / 180.0
+
 # direction names for minecraft cube face UVs
 DIRECTIONS = np.array([
     "north",
@@ -174,11 +177,11 @@ def parse_element(
     # get euler rotation
     rot_euler = np.array([0.0, 0.0, 0.0])
     if "rotationX" in e:
-        rot_euler[1] = e["rotationX"] * math.pi / 180.0
+        rot_euler[1] = e["rotationX"] * DEG_TO_RAD
     if "rotationY" in e:
-        rot_euler[2] = e["rotationY"] * math.pi / 180.0
+        rot_euler[2] = e["rotationY"] * DEG_TO_RAD
     if "rotationZ" in e:
-        rot_euler[0] = e["rotationZ"] * math.pi / 180.0
+        rot_euler[0] = e["rotationZ"] * DEG_TO_RAD
 
     # create cube
     bpy.ops.mesh.primitive_cube_add(location=location, rotation=rot_euler)
@@ -312,7 +315,7 @@ def parse_attachpoint(
         py + parent_cube_origin[2],
     ])
     
-    rotation = math.pi / 180.0 * np.array([rz, rx, ry])
+    rotation = DEG_TO_RAD * np.array([rz, rx, ry])
 
     # create object
     bpy.ops.object.empty_add(type="ARROWS", radius=1.0, location=location, rotation=rotation)
@@ -320,6 +323,194 @@ def parse_attachpoint(
     obj.name = "attach_" + (e.get("code") or "attachpoint")
 
     return obj
+
+
+def rebuild_hierarchy_with_bones(
+    root_objects,
+):
+    """Wrapper to make armature and replace cubes in hierarchy
+    with bones. This is multi step process due to how Blender
+    EditBone and PoseBones work
+    """
+    bpy.ops.object.mode_set(mode="OBJECT") # ensure correct starting context
+    bpy.ops.object.add(type="ARMATURE", enter_editmode=True)
+    armature = bpy.context.active_object
+    
+    for obj in root_objects:
+        add_bone_to_armature_from_object(
+            obj,
+            armature,
+            None,
+        )
+    
+    # switch to pose mode, set bone positions from object transform
+    bpy.ops.object.mode_set(mode="POSE")
+    for obj in root_objects:
+        set_bone_pose_from_object(
+            obj,
+            armature,
+        )
+    
+    # set rest pose, not sure if we want this or not...
+    bpy.ops.pose.armature_apply()
+
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+    return armature
+
+
+def add_bone_to_armature_from_object(
+    obj,
+    armature,
+    parent_bone,
+):
+    # skip non mesh (e.g. attach points)
+    if not isinstance(obj.data, bpy.types.Mesh):
+        return
+    
+    bone = armature.data.edit_bones.new(obj.name)
+
+    # this orients bone to blender XYZ
+    bone.head = (0., 0., 0.)
+    bone.tail = (0., 1., 0.)
+
+    if parent_bone is not None:
+        bone.parent = parent_bone
+        bone.use_connect = False
+    
+    for child in obj.children:
+        add_bone_to_armature_from_object(
+            child,
+            armature,
+            bone,
+        )
+
+
+def set_bone_pose_from_object(
+    obj,
+    armature,
+):
+    # skip non mesh (e.g. attach points)
+    if not isinstance(obj.data, bpy.types.Mesh):
+        return
+    
+    name = obj.name
+    pose_bone = armature.pose.bones[name]
+    pose_bone.location = (
+        obj.location.x,
+        obj.location.y,
+        obj.location.z,
+    )
+    pose_bone.rotation_mode = "XYZ"
+    pose_bone.rotation_euler = obj.rotation_euler
+    
+    # now parent obj to bone
+    obj.parent = armature
+    obj.parent_type = "BONE"
+    obj.parent_bone = name
+    obj.location = (0., -1.0, 0.)
+    obj.rotation_euler = (0., 0., 0.)
+
+    for child in obj.children:
+        set_bone_pose_from_object(
+            child,
+            armature,
+        )
+
+
+def parse_animation(
+    e,        # json element
+    armature, # armature to associate action with
+    stats,    # import stats
+):
+    def add_keyframe_point(fcu, frame, val):
+        """Helper to add keyframe point to fcurve"""
+        idx = len(fcu.keyframe_points)
+        fcu.keyframe_points.add(1)
+        fcu.keyframe_points[idx].interpolation = "LINEAR"
+        fcu.keyframe_points[idx].co = frame, val
+    
+    class FcurveStorage():
+        """Helper to create, cache, store/load fcurves for this action
+        from fcurve name
+        """
+        def __init__(self):
+            self.storage = {}
+
+        def get(self, fcurves, name, index):
+            if name in self.storage:
+                if self.storage[name][index] != None:
+                    return self.storage[name][index]
+                else:
+                    fcu = fcurves.new(data_path=name, index=index)
+                    self.storage[name][index] = fcu
+                    return fcu
+            else:
+                fcu = fcurves.new(data_path=name, index=index)
+                # each index can be an fcurve, support x,y,z,w coords
+                self.storage[name] = [None, None, None, None]
+                self.storage[name][index] = fcu
+                return fcu
+
+    name = e["code"] # use code as name instead of name field
+    action = bpy.data.actions.new(name=name)
+
+    # add special marker for onActivityStopped and onAnimationEnd
+    num_frames = e.get("quantityframes") or 0
+    if "onAnimationEnd" in e:
+        marker = action.pose_markers.new(name="onAnimationEnd_{}".format(e["onAnimationEnd"]))
+        marker.frame = num_frames
+    if "onActivityStopped" in e:
+        marker = action.pose_markers.new(name="onActivityStopped_{}".format(e["onActivityStopped"]))
+        marker.frame = num_frames + 20
+    
+    # load keyframe data
+    fcurve_cache = FcurveStorage()
+
+    # insert first keyframe at end to properly loop
+    keyframes = e["keyframes"].copy()
+    if len(keyframes) > 0 and num_frames > 0:
+        # make copy of frame 0 and insert at num_frames-1
+        keyframe_0_copy = {
+            "frame": num_frames - 1,
+            "elements": keyframes[0]["elements"],
+        }
+        keyframes.append(keyframe_0_copy)
+    
+    for keyframe in keyframes:
+        frame = keyframe["frame"]
+        for bone, data in keyframe["elements"].items():
+            fcu_name_prefix = "pose.bones[\"{}\"]".format(bone)
+            fcu_name_location = fcu_name_prefix + ".location"
+            fcu_name_rotation = fcu_name_prefix + ".rotation_euler"
+
+            # position fcurves
+            fcu_px = fcurve_cache.get(action.fcurves, fcu_name_location, 0)
+            fcu_py = fcurve_cache.get(action.fcurves, fcu_name_location, 1)
+            fcu_pz = fcurve_cache.get(action.fcurves, fcu_name_location, 2)
+            
+            # euler rotation fcurves
+            fcu_rx = fcurve_cache.get(action.fcurves, fcu_name_rotation, 0)
+            fcu_ry = fcurve_cache.get(action.fcurves, fcu_name_rotation, 1)
+            fcu_rz = fcurve_cache.get(action.fcurves, fcu_name_rotation, 2)
+
+            # add keyframe points (note vintage story ZXY -> XYZ)
+            if "offsetX" in data:
+                add_keyframe_point(fcu_py, frame, data["offsetX"])
+            if "offsetY" in data:
+                add_keyframe_point(fcu_pz, frame, data["offsetY"])
+            if "offsetZ" in data:
+                add_keyframe_point(fcu_px, frame, data["offsetZ"])
+            
+            if "rotationX" in data:
+                add_keyframe_point(fcu_ry, frame, data["rotationX"] * DEG_TO_RAD)
+            if "rotationY" in data:
+                add_keyframe_point(fcu_rz, frame, data["rotationY"] * DEG_TO_RAD)
+            if "rotationZ" in data:
+                add_keyframe_point(fcu_rx, frame, data["rotationZ"] * DEG_TO_RAD)
+    
+    # update stats
+    stats.animations += 1
 
 
 def load_element(
@@ -535,6 +726,20 @@ def load(context,
         for index in g["children"]:
             col.objects.link(all_objects[index])
             bpy.context.scene.collection.objects.unlink(all_objects[index])
+    
+    # import animations
+    if "animations" in data and len(data["animations"]) > 0:
+        # go through objects, rebuild hierarchy using bones instead of direct parenting
+        # to support bone based animation
+        armature = rebuild_hierarchy_with_bones(root_objects)
+
+        # load animations
+        for anim in data["animations"]:
+            try:
+                parse_animation(anim, armature, stats)
+            except:
+                print("Failed to parse animation:", anim)
+                pass
     
     # select newly imported objects
     for obj in bpy.context.selected_objects:
