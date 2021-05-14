@@ -6,6 +6,10 @@ import time
 from math import inf
 import bpy
 from mathutils import Vector
+from . import animation
+
+import importlib
+importlib.reload(animation)
 
 # convert deg to rad
 DEG_TO_RAD = math.pi / 180.0
@@ -431,47 +435,30 @@ def parse_animation(
         fcu.keyframe_points.add(1)
         fcu.keyframe_points[idx].interpolation = "LINEAR"
         fcu.keyframe_points[idx].co = frame, val
-    
-    class FcurveStorage():
-        """Helper to create, cache, store/load fcurves for this action
-        from fcurve name
-        """
-        def __init__(self):
-            self.storage = {}
-
-        def get(self, fcurves, name, index):
-            if name in self.storage:
-                if self.storage[name][index] != None:
-                    return self.storage[name][index]
-                else:
-                    fcu = fcurves.new(data_path=name, index=index)
-                    self.storage[name][index] = fcu
-                    return fcu
-            else:
-                fcu = fcurves.new(data_path=name, index=index)
-                # each index can be an fcurve, support x,y,z,w coords
-                self.storage[name] = [None, None, None, None]
-                self.storage[name][index] = fcu
-                return fcu
 
     name = e["code"] # use code as name instead of name field
     action = bpy.data.actions.new(name=name)
+
+    # flag to repeat animation (insert duplicate keyframe at end)
+    repeat_animation = False
 
     # add special marker for onActivityStopped and onAnimationEnd
     num_frames = e.get("quantityframes") or 0
     if "onAnimationEnd" in e:
         marker = action.pose_markers.new(name="onAnimationEnd_{}".format(e["onAnimationEnd"]))
         marker.frame = num_frames
+        if e["onAnimationEnd"].lower() != "hold": # death animations hold on finish
+            repeat_animation = True
     if "onActivityStopped" in e:
         marker = action.pose_markers.new(name="onActivityStopped_{}".format(e["onActivityStopped"]))
         marker.frame = num_frames + 20
     
     # load keyframe data
-    fcurve_cache = FcurveStorage()
+    animation_adapter = animation.AnimationAdapter(action, name=name)
 
     # insert first keyframe at end to properly loop
     keyframes = e["keyframes"].copy()
-    if len(keyframes) > 0 and num_frames > 0:
+    if repeat_animation and len(keyframes) > 0 and num_frames > 0:
         # make copy of frame 0 and insert at num_frames-1
         keyframe_0_copy = {
             "frame": num_frames - 1,
@@ -486,15 +473,18 @@ def parse_animation(
             fcu_name_location = fcu_name_prefix + ".location"
             fcu_name_rotation = fcu_name_prefix + ".rotation_euler"
 
+            # add bone => rotation mode
+            animation_adapter.add_bone(bone, "rotation_euler")
+
             # position fcurves
-            fcu_px = fcurve_cache.get(action.fcurves, fcu_name_location, 0)
-            fcu_py = fcurve_cache.get(action.fcurves, fcu_name_location, 1)
-            fcu_pz = fcurve_cache.get(action.fcurves, fcu_name_location, 2)
+            fcu_px = animation_adapter.get(fcu_name_location, 0)
+            fcu_py = animation_adapter.get(fcu_name_location, 1)
+            fcu_pz = animation_adapter.get(fcu_name_location, 2)
             
             # euler rotation fcurves
-            fcu_rx = fcurve_cache.get(action.fcurves, fcu_name_rotation, 0)
-            fcu_ry = fcurve_cache.get(action.fcurves, fcu_name_rotation, 1)
-            fcu_rz = fcurve_cache.get(action.fcurves, fcu_name_rotation, 2)
+            fcu_rx = animation_adapter.get(fcu_name_rotation, 0)
+            fcu_ry = animation_adapter.get(fcu_name_rotation, 1)
+            fcu_rz = animation_adapter.get(fcu_name_rotation, 2)
 
             # add keyframe points (note vintage story ZXY -> XYZ)
             if "offsetX" in data:
@@ -511,6 +501,9 @@ def parse_animation(
             if "rotationZ" in data:
                 add_keyframe_point(fcu_rx, frame, data["rotationZ"] * DEG_TO_RAD)
     
+    # resample animations for blender
+    animation_adapter.resample_to_blender()
+
     # update stats
     stats.animations += 1
 
@@ -737,11 +730,12 @@ def load(context,
 
         # load animations
         for anim in data["animations"]:
-            try:
-                parse_animation(anim, armature, stats)
-            except:
-                print("Failed to parse animation:", anim)
-                pass
+            parse_animation(anim, armature, stats)
+            # try:
+            #     parse_animation(anim, armature, stats)
+            # except:
+            #     print("Failed to parse animation:", anim)
+            #     pass
     
     # select newly imported objects
     for obj in bpy.context.selected_objects:
