@@ -623,7 +623,9 @@ def generate_element(
                 if face_uv_rotation != 0 and face_uv_rotation != 360:
                     faces[d]["rotation"] = face_uv_rotation if face_uv_rotation >= 0 else 360 + face_uv_rotation
     
+    # ================================
     # build children
+    # ================================
     children = []
 
     # combine 90 deg rotation matrix for child
@@ -681,12 +683,11 @@ def generate_element(
 def save_objects(
     filepath,
     objects,
-    recenter_origin = False,
-    translate_origin=None,         # origin translate either [x, y, z] or None
+    translate_origin=None,
     generate_texture=True,
     use_only_exported_object_colors=False,
     texture_folder="",
-    texture_filename="",
+    color_texture_filename="",
     export_uvs=True,
     minify=False,
     decimal_precision=-1,
@@ -700,7 +701,8 @@ def save_objects(
     - filepath: Output file path name.
     - object: Iterable collection of Blender objects
     - recenter_origin: Recenter model so that its center is at specified translate_origin
-    - translate_origin: New origin to shift
+    - translate_origin: New origin to shift, None for no shift, [x, y, z] list in Blender coords
+                        to apply shift
     - generate_texture: Generate texture from solid material colors. By default, creates
             a color texture from all materials in file (so all groups of
             objects can share the same texture file).
@@ -709,7 +711,7 @@ def save_objects(
             all file materials.
     - texture_folder: Output texture subpath, for typical "item/texture_name" the
             texture folder would be "item".
-    - texture_file_name: Name of texture file. TODO: auto-parse textures from materials.
+    - color_texture_filename: Name of exported color texture file.
     - export_uvs: Export object uvs.
     - minify: Minimize output file size (write into single line, remove spaces, ...)
     - decimal_precision: Number of digits after decimal to keep in numbers.
@@ -717,7 +719,6 @@ def save_objects(
     """
     
     # debug
-    print("USE ORIGIN SHIFT:", recenter_origin)
     print("ORIGIN SHIFT:", translate_origin)
     print("")
 
@@ -764,7 +765,7 @@ def save_objects(
             root_elements.append(element)
     
     # ===========================
-    # generate texture images
+    # generate color texture image
     # ===========================
     if generate_texture:
         # default, get colors from all materials in file
@@ -778,15 +779,15 @@ def save_objects(
         tex_pixels, tex_size, color_tex_uv_map, default_color_uv = create_color_texture(model_colors)
 
         # texture output filepaths
-        if texture_filename == "":
+        if color_texture_filename == "":
             current_dir = os.path.dirname(filepath)
             filepath_name = os.path.splitext(os.path.basename(filepath))[0]
             texture_save_path = os.path.join(current_dir, filepath_name + ".png")
             texture_model_path = posixpath.join(texture_folder, filepath_name)
         else:
             current_dir = os.path.dirname(filepath)
-            texture_save_path = os.path.join(current_dir, texture_filename + ".png")
-            texture_model_path = posixpath.join(texture_folder, texture_filename)
+            texture_save_path = os.path.join(current_dir, color_texture_filename + ".png")
+            texture_model_path = posixpath.join(texture_folder, color_texture_filename)
         
         # create + save texture
         tex = bpy.data.images.new("tex_colors", alpha=True, width=tex_size, height=tex_size)
@@ -801,27 +802,28 @@ def save_objects(
     
     # if not generating texture, just write texture path to json file
     # TODO: scan materials for textures, then update output size
-    elif texture_filename != "":
+    elif color_texture_filename != "":
         model_json["textureSizes"]["0"] = [16, 16]
-        model_json["textures"]["0"] = posixpath.join(texture_folder, texture_filename)
+        model_json["textures"]["0"] = posixpath.join(texture_folder, color_texture_filename)
     
     # ===========================
     # process face texture paths
-    # convert blender path names "//folder\tex.png" -> "item/tex"
+    # convert blender path names "//folder\tex.png" -> "{texture_folder}/tex"
     # add textures indices for textures, and create face mappings like "#1"
     # note: #0 id reserved for generated color texture
     # ===========================
     texture_refs = {} # maps blender path name -> #n identifiers
     texture_id = 1    # texture id in "#1" identifier
     for texture_path, texture_info in model_textures.items():
-        texture_out_path = texture_path
-        if texture_out_path[0:2] == "//":
-            texture_out_path = texture_out_path[2:]
-        texture_out_path = texture_out_path.replace("\\", "/")
-        texture_out_path = os.path.splitext(texture_out_path)[0]
+        texture_filename = texture_path
+        if texture_filename[0:2] == "//":
+            texture_filename = texture_filename[2:]
+        texture_filename = texture_filename.replace("\\", "/")
+        texture_filename = os.path.split(texture_filename)[1]
+        texture_filename = os.path.splitext(texture_filename)[0]
         
         texture_refs[texture_path] = "#" + str(texture_id)
-        model_json["textures"][str(texture_id)] = posixpath.join(texture_folder, texture_out_path)
+        model_json["textures"][str(texture_id)] = posixpath.join(texture_folder, texture_filename)
         model_json["textureSizes"][str(texture_id)] = texture_info.size
         texture_id += 1
 

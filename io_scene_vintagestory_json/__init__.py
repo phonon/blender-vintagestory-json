@@ -132,12 +132,12 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
     texture_folder: StringProperty(
         name="Texture Subfolder",
         description="Subfolder in resourcepack: assets/vintagestory/textures/[folder]",
-        default="item",
+        default="",
     )
 
-    texture_filename: StringProperty(
-        name="Texture Name",
-        description="Export texture filename, applied to all cuboids",
+    color_texture_filename: StringProperty(
+        name="Color Texture Name",
+        description="Export color texture filename",
         default="",
     )
 
@@ -252,7 +252,7 @@ class VINTAGESTORY_PT_export_textures(bpy.types.Panel):
         operator = sfile.active_operator
 
         layout.prop(operator, "texture_folder")
-        layout.prop(operator, "texture_filename")
+        layout.prop(operator, "color_texture_filename")
         layout.prop(operator, "export_uvs")
         layout.prop(operator, "generate_texture")
         layout.prop(operator, "use_only_exported_object_colors")
