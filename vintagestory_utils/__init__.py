@@ -1,12 +1,31 @@
 import bpy
 import math
 
+class VintageStoryPrimitiveAddBlock(bpy.types.Operator):
+    """Standard block 16x16, equivalent to a bounding box in
+    VS model creator.
+    """
+    bl_idname = "vintagestory.primitive_add_block"
+    bl_label = "Add Block"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        bpy.ops.mesh.primitive_cube_add()
+        cube = bpy.context.active_object
+        bpy.ops.transform.translate(value=(0, 0, 8.0))
+        bpy.ops.transform.resize(value=(8.0, 8.0, 8.0))
+        bpy.ops.object.transform_apply(location=False, scale=True, rotation=False)
+        cube.select_set(True)
+
+        return {'FINISHED'}
+
+
 # solid octagonal:
 #    _
 #  /   \     height = (1 + sqrt(2)) * edge 
 # |     |
 #  \ _ /
-class PrimitiveAddOctagonal(bpy.types.Operator):
+class VintageStoryPrimitiveAddOctagonal(bpy.types.Operator):
     bl_idname = "vintagestory.primitive_add_octagonal"
     bl_label = "Add Octagonal (4 Cuboids)"
     bl_options = {"REGISTER", "UNDO"}
@@ -44,7 +63,7 @@ class PrimitiveAddOctagonal(bpy.types.Operator):
 #  / _ \     height = (1 + sqrt(2)) * edge 
 # | |_| |
 #  \ _ /
-class PrimitiveAddOctagonalHollow(bpy.types.Operator):
+class VintageStoryPrimitiveAddOctagonalHollow(bpy.types.Operator):
     bl_idname = "vintagestory.primitive_add_octagonal_hollow"
     bl_label = "Add Hollow Octagonal (8 Cuboids)"
     bl_options = {"REGISTER", "UNDO"}
@@ -74,7 +93,7 @@ class PrimitiveAddOctagonalHollow(bpy.types.Operator):
 
 # solid hexadecagon (16-sided polygon) (uses 8 cuboids)
 # height = sin(7pi/16) / sin(pi/16) * edge
-class PrimitiveAddHexadecagon(bpy.types.Operator):
+class VintageStoryPrimitiveAddHexadecagon(bpy.types.Operator):
     bl_idname = "vintagestory.primitive_add_hexadecagon"
     bl_label = "Add Hexadecagon (8 Cuboids)"
     bl_options = {"REGISTER", "UNDO"}
@@ -101,7 +120,7 @@ class PrimitiveAddHexadecagon(bpy.types.Operator):
 
 # hollow hexadecagon (16-sided polygon) (uses 16 cuboids)
 # height = sin(7pi/16) / sin(pi/16) * edge
-class PrimitiveAddHexadecagonHollow(bpy.types.Operator):
+class VintageStoryPrimitiveAddHexadecagonHollow(bpy.types.Operator):
     bl_idname = "vintagestory.primitive_add_hexadecagon_hollow"
     bl_label = "Add Hollow Hexadecagon (16 Cuboids)"
     bl_options = {"REGISTER", "UNDO"}
@@ -135,7 +154,7 @@ class PrimitiveAddHexadecagonHollow(bpy.types.Operator):
 #  /|_|\     height = (1 + sqrt(2)) * edge 
 # |_|_|_|
 #  \|_|/
-class PrimitiveAddOctsphere(bpy.types.Operator):
+class VintageStoryPrimitiveAddOctsphere(bpy.types.Operator):
     bl_idname = "vintagestory.primitive_add_octsphere"
     bl_label = "Add Octsphere"
     bl_options = {"REGISTER", "UNDO"}
@@ -180,23 +199,27 @@ class VIEW3D_MT_vintagestory_submenu(bpy.types.Menu):
     def draw(self, context):
         layout = self.layout
         layout.operator(
-            PrimitiveAddOctagonal.bl_idname,
+            VintageStoryPrimitiveAddBlock.bl_idname,
+            text="Block",
+            icon="MESH_CUBE")
+        layout.operator(
+            VintageStoryPrimitiveAddOctagonal.bl_idname,
             text="Octagonal",
             icon="MESH_CYLINDER")
         layout.operator(
-            PrimitiveAddOctagonalHollow.bl_idname,
+            VintageStoryPrimitiveAddOctagonalHollow.bl_idname,
             text="Octagonal (Hollow)",
             icon="MESH_TORUS")
         layout.operator(
-            PrimitiveAddHexadecagon.bl_idname,
+            VintageStoryPrimitiveAddHexadecagon.bl_idname,
             text="Hexadecagon",
             icon="MESH_CYLINDER")
         layout.operator(
-            PrimitiveAddHexadecagonHollow.bl_idname,
+            VintageStoryPrimitiveAddHexadecagonHollow.bl_idname,
             text="Hexadecagon (Hollow)",
             icon="MESH_TORUS")
         layout.operator(
-            PrimitiveAddOctsphere.bl_idname,
+            VintageStoryPrimitiveAddOctsphere.bl_idname,
             text="Octsphere",
             icon="MESH_UVSPHERE")
     
@@ -206,11 +229,12 @@ def add_submenu(self, context):
 
 # register
 classes = [
-    PrimitiveAddOctagonal,
-    PrimitiveAddOctagonalHollow,
-    PrimitiveAddHexadecagon,
-    PrimitiveAddHexadecagonHollow,
-    PrimitiveAddOctsphere,
+    VintageStoryPrimitiveAddBlock,
+    VintageStoryPrimitiveAddOctagonal,
+    VintageStoryPrimitiveAddOctagonalHollow,
+    VintageStoryPrimitiveAddHexadecagon,
+    VintageStoryPrimitiveAddHexadecagonHollow,
+    VintageStoryPrimitiveAddOctsphere,
     VIEW3D_MT_vintagestory_submenu,
 ]
 

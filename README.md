@@ -4,7 +4,7 @@ Import/export cuboid geometry between Blender and Vintage Story .json model form
 
 Supports import/export uvs. This addon can export solid material colors packed into an auto-generated image texture (alongside normal textures), so you can mix textures and solid face colors on Blender meshes.
 
-Tested on Blender 2.83, 2.92.
+Tested on Blender 2.92.
 
 
 Installation
@@ -13,10 +13,19 @@ Installation
 2. Enable in **Edit > Preferences > Add-ons** (search for *Vintage Story JSON Import/Export*)
 
 
-Export Guide 
+Export Guide/Notes
 ---------------------------------------
 - **Only exports cuboid objects** e.g. Object meshes must be rectangular prisms (8 vertices and 6 faces). The local mesh coordinates must be aligned to global XYZ axis. **Do not rotate the mesh vertices in edit mode.**
 - **All cuboids must be separate objects.**
+- **Attach points**: Create an "Empty" type object (e.g. **Shift + A > Empty > Arrows**) and name it "attach_{name}", the {name} will become an attachpoint. e.g. "attach_Center" will generate an attachpoint called "Center".
+- **Animation metadata**: Animation metadata uses Action pose markers. First enable these in the Action Editor from the menu **Marker > Show Pose Markers**
+    - **"onAnimationEnd" + "quantityFrames"**: Put a pose marker named "onAnimationEnd_{Action}" at the frame where the animation should end. "quantityFrames" will be that (frame + 1), with the assumption animations start at frame 0. "onAnimationEnd" will be the {Action}, e.g. "onAnimationEnd_Stop" at frame 119 will generate keys:
+        - "onAnimationEnd": "Stop"
+        - "quantityFrames": 120
+    - **"onActivityStopped"**: Put a pose marker anywhere named "onActivityStopped_{Action}". e.g. "onActivityStopped_PlayTillEnd" will generate key:
+        - "onActivityStopped": "PlayTillEnd"
+- **Generating solid color textures:** By default, the exporter will generate a texture containing all solid material colors. So you can texture using just materials + colors without UV mapping or a texture image. This works alongside using texture images and uv mapping.
+
 
 Import Guide/Notes
 ---------------------------------------
@@ -29,5 +38,38 @@ So instead imported animations are mapped to bone animations. The full import is
     object hierarchy.
     3. Apply the bone transforms as the rest pose. This applies bone transforms, sets them
     to identity, and returns transform to the mesh objects.
-    4. Animations format is relative displacement from bone rest pose. Note the location
-    transform is applied in transformed space after bone rotation transform is applied. (TODO)
+    4. Animations format is relative displacement from bone rest pose. Note that Blender and VintageStory location is applied differently (this import/export will handle the conversion between these formats):
+        - VintageStory: v' = R\*T\*v (translate first, then rotate)
+        - Blender: v' = T\*R\*v (rotate first, then translate)
+
+
+Export Options
+---------------------------------------
+|  Option  |  Default   | Description  |
+|----------|------------|------------- |
+| Selection Only | False | If True, export only selected objects|
+| Translate Origin | True | Fixed translation of coordinates by `(x,y,z)` (in Blender coordinates) |
+| Translate X | 8.0 | `x` export recenter coordinate |
+| Translate Y | 8.0 | `y` export recenter coordinate |
+| Translate Z | 0.0 | `z` export recenter coordinate |
+| Texture Subfolder  |  | Subfolder for model in textures folder: `/textures/[subfolder]` |
+| Color Texture Name |  | Name of color texture generated `[name].png` (blank defaults to output `.json` filename) |
+| Export UVs | True | Exports face UVs |
+| Generate Color Texture | True | Auto-textures solid material colors and generates a `.png` image texture exported alongside model (overwrites UVs). By default will get colors from all materials in the Blender file. |
+| Only Use Exported Object Colors | False | When exporting auto-generated color texture, only use material colors on exported objects (instead of all materials in file). |
+| Minify .json | False | Enable options to reduce .json file size |
+| Decimal Precision | 8 | Number of digits after decimal point in output .json (-1 to disable) |
+| Export Animations | False | Export bone animations (TODO) |
+
+
+Import Options
+---------------------------------------
+|  Option  |  Default   | Description  |
+|----------|------------|------------- |
+| Import UVs | True | Import face UVs |
+| Recenter to Origin | False | Re-centers model center on Blender world origin (overrides translate option) |
+| Translate Origin | False | Fixed translation of coordinates by `(x,y,z)` (in Blender coordinates) |
+| Translate X | -8.0 | `x` import recenter coordinate |
+| Translate Y | -8.0 | `y` import recenter coordinate |
+| Translate Z | 0.0 | `z` import recenter coordinate |
+| Import Animations | True | Import animations, converts object hierachy to bone hierarchy |
