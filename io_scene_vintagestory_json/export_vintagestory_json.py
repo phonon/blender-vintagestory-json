@@ -8,6 +8,10 @@ import posixpath # need "/" separator
 import os
 import json
 
+# convert deg to rad
+DEG_TO_RAD = math.pi / 180.0
+RAD_TO_DEG = 180.0 / math.pi
+
 # direction names for minecraft cube face UVs
 DIRECTIONS = np.array([
     "north",
@@ -129,7 +133,8 @@ def clamp_rotation(r):
 
 def get_reduced_rotation(rotation):
     """Split rotation into all 90 deg rotations
-    and the residual.
+    and the residual. Return a rotation matrix for all 90 deg rotations
+    or None if not required.
     """
     residual_rotation = rotation.copy()
     
@@ -160,7 +165,10 @@ def get_reduced_rotation(rotation):
         residual_rotation.z -= angle
         zsteps += rot_z_sign
     
-    rotation_90deg = Euler((xsteps * math.pi/2, ysteps * math.pi/2, zsteps * math.pi/2), "XYZ")
+    if xsteps != 0 or ysteps != 0 or zsteps != 0:
+        rotation_90deg = Euler((xsteps * math.pi/2, ysteps * math.pi/2, zsteps * math.pi/2), "XYZ")
+    else:
+        rotation_90deg = None
     
     return residual_rotation, rotation_90deg
 
@@ -366,37 +374,47 @@ def generate_element(
     for i, v in enumerate(mesh.vertices):
         v_local[0:3,i] = v.co
     
+    # rotation
+    obj_rotation = obj.rotation_euler
+
     # ================================
-    # first reduce rotation to [-90, 90] by applying all 90 deg
-    # rotations directly to vertices
+    # apply parent 90 deg rotations
     # ================================
     if parent_rotation_90deg is not None:
-        ax_angle, theta = obj.rotation_euler.to_quaternion().to_axis_angle()
+        ax_angle, theta = obj_rotation.to_quaternion().to_axis_angle()
         transformed_ax_angle = parent_rotation_90deg @ ax_angle
         obj_rotation = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
         v_local = parent_rotation_90deg @ v_local
         origin = parent_rotation_90deg @ origin
-    else:
-        obj_rotation = obj.rotation_euler
     
+    # ================================
+    # constrain rotation to [-90, 90] by applying all further
+    # 90 deg rotations directly to vertices
+    # ================================
     residual_rotation, rotation_90deg = get_reduced_rotation(obj_rotation)
 
-    mat_rotate_90deg = np.array(rotation_90deg.to_matrix())
+    if rotation_90deg is not None:
+        mat_rotate_90deg = np.array(rotation_90deg.to_matrix())
     
-    # rotate axis of residual rotation
-    ax_angle, theta = residual_rotation.to_quaternion().to_axis_angle()
-    transformed_ax_angle = mat_rotate_90deg @ ax_angle
-    rotation_transformed = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
+        # rotate axis of residual rotation
+        ax_angle, theta = residual_rotation.to_quaternion().to_axis_angle()
+        transformed_ax_angle = mat_rotate_90deg @ ax_angle
+        obj_rotation = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
 
+        # rotate mesh vertices
+        v_local = mat_rotate_90deg @ v_local
+    else:
+        mat_rotate_90deg = None
+    
+    # create output coords, rotation
     # get min/max for to/from points
-    v_local_transformed = mat_rotate_90deg @ v_local
-    v_min = np.amin(v_local_transformed, axis=1)
-    v_max = np.amax(v_local_transformed, axis=1)
+    v_min = np.amin(v_local, axis=1)
+    v_max = np.amax(v_local, axis=1)
     
     rotation = np.array([
-        rotation_transformed.x * 180.0 / math.pi,
-        rotation_transformed.y * 180.0 / math.pi,
-        rotation_transformed.z * 180.0 / math.pi,
+        obj_rotation.x * RAD_TO_DEG,
+        obj_rotation.y * RAD_TO_DEG,
+        obj_rotation.z * RAD_TO_DEG,
     ])
 
     # change axis to vintage story y-up axis
@@ -457,8 +475,12 @@ def generate_element(
         # face_normal = np.array(face.normal)
         # face_normal_stacked = np.transpose(face_normal[..., np.newaxis], (1,0))
         face_normal = face.normal
-        face_normal_transformed = mat_rotate_90deg @ face_normal
-        face_normal_stacked = np.transpose(face_normal_transformed[..., np.newaxis], (1,0))
+        if parent_rotation_90deg is not None:
+            face_normal = parent_rotation_90deg @ face_normal
+        if mat_rotate_90deg is not None:
+            face_normal = mat_rotate_90deg @ face_normal
+        face_normal = np.array(face_normal)
+        face_normal_stacked = np.transpose(face_normal[..., np.newaxis], (1,0))
         face_normal_stacked = np.tile(face_normal_stacked, (6,1))
 
         # get face direction string
@@ -498,7 +520,7 @@ def generate_element(
                 # vertices loops
                 # project 3d vertex loop onto 2d loop based on face normal,
                 # minecraft uv mapping starting corner experimentally determined
-                verts = [ v_local_transformed[:,v] for v in face.vertices ]
+                verts = [ v_local[:,v] for v in face.vertices ]
                 
                 if face_normal[0] > 0.5: # normal = (1, 0, 0)
                     verts = [ (v[1], v[2]) for v in verts ]
@@ -603,6 +625,14 @@ def generate_element(
     
     # build children
     children = []
+
+    # combine 90 deg rotation matrix for child
+    if mat_rotate_90deg is not None:
+        if parent_rotation_90deg is not None:
+            mat_rotate_90deg = mat_rotate_90deg @ parent_rotation_90deg
+    else:
+        mat_rotate_90deg = parent_rotation_90deg
+    
     for child in obj.children:
         child_element = generate_element(
             child,

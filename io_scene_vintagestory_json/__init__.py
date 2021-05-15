@@ -50,17 +50,17 @@ class ImportVintageStoryJSON(Operator, ImportHelper):
     translate_origin_x: FloatProperty(
         name="Translate X",
         description="X export offset (in Blender coordinates)",
-        default=-8,
+        default=-8.,
     )
     translate_origin_y: FloatProperty(
         name="Translate Y",
         description="Y export offset (in Blender coordinates)",
-        default=-8,
+        default=-8.,
     )
     translate_origin_z: FloatProperty(
         name="Translate Z",
         description="Z export offset (in Blender coordinates)",
-        default=0,
+        default=0.,
     )
 
     # import animations
@@ -104,26 +104,27 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
         default=False,
     )
 
-    recenter_origin: BoolProperty(
-        name="Recenter Origin",
-        description="Recenter model so its center is at new origin",
+    # applies default shift from vintagestory origin
+    translate_origin: BoolProperty(
+        name="Translate Origin",
+        description="Translate model origin after export",
         default=True,
     )
-
-    recenter_origin_x: FloatProperty(
-        name="Recenter X",
+    
+    translate_origin_x: FloatProperty(
+        name="Translate X",
         description="X export offset (in Blender coordinates)",
-        default=8,
+        default=8.,
     )
-    recenter_origin_y: FloatProperty(
-        name="Recenter Y",
+    translate_origin_y: FloatProperty(
+        name="Translate Y",
         description="Y export offset (in Blender coordinates)",
-        default=8,
+        default=8.,
     )
-    recenter_origin_z: FloatProperty(
-        name="Recenter Z",
+    translate_origin_z: FloatProperty(
+        name="Translate Z",
         description="Z export offset (in Blender coordinates)",
-        default=0,
+        default=0.,
     )
 
     # ================================
@@ -186,11 +187,14 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
 
     def execute(self, context):
         args = self.as_keywords()
-        args["origin_shift"] = [
-            args["recenter_origin_x"],
-            args["recenter_origin_y"],
-            args["recenter_origin_z"],
-        ]
+        if args["translate_origin"] == True:
+            args["translate_origin"] = [
+                args["translate_origin_x"],
+                args["translate_origin_y"],
+                args["translate_origin_z"],
+            ]
+        else:
+            args["translate_origin"] = None
         
         return export_vintagestory_json.save(context, **args)
     
@@ -220,10 +224,10 @@ class VINTAGESTORY_PT_export_geometry(bpy.types.Panel):
         operator = sfile.active_operator
 
         layout.prop(operator, "selection_only")
-        layout.prop(operator, "recenter_origin")
-        layout.prop(operator, "recenter_origin_x")
-        layout.prop(operator, "recenter_origin_y")
-        layout.prop(operator, "recenter_origin_z")
+        layout.prop(operator, "translate_origin")
+        layout.prop(operator, "translate_origin_x")
+        layout.prop(operator, "translate_origin_y")
+        layout.prop(operator, "translate_origin_z")
 
 
 # export options panel for textures
