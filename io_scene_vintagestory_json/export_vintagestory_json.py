@@ -324,13 +324,14 @@ def create_color_texture(
 
 
 def generate_element(
-    obj,                         # current object
-    groups=None,                 # running dict of collections
-    model_colors=None,           # running dict of all model colors
-    model_textures=None,         # running dict of all model textures
-    parent_cube_origin=None,     # parent cube "from" origin (coords in VintageStory space)
-    parent_rotation_origin=None, # parent object rotation origin (coords in VintageStory space)
-    export_uvs=True,             # export uvs
+    obj,                           # current object
+    groups=None,                   # running dict of collections
+    model_colors=None,             # running dict of all model colors
+    model_textures=None,           # running dict of all model textures
+    parent_cube_origin=None,       # parent cube "from" origin (coords in VintageStory space)
+    parent_rotation_origin=None,   # parent object rotation origin (coords in VintageStory space)
+    parent_rotation_90deg=None,    # parent 90 degree rotation matrix
+    export_uvs=True,               # export uvs
     export_generated_texture=True,
 ):
     """Recursive function to generate output element from
@@ -369,10 +370,19 @@ def generate_element(
     # first reduce rotation to [-90, 90] by applying all 90 deg
     # rotations directly to vertices
     # ================================
-    residual_rotation, rotation_90deg = get_reduced_rotation(obj.rotation_euler)
+    if parent_rotation_90deg is not None:
+        ax_angle, theta = obj.rotation_euler.to_quaternion().to_axis_angle()
+        transformed_ax_angle = parent_rotation_90deg @ ax_angle
+        obj_rotation = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
+        v_local = parent_rotation_90deg @ v_local
+        origin = parent_rotation_90deg @ origin
+    else:
+        obj_rotation = obj.rotation_euler
+    
+    residual_rotation, rotation_90deg = get_reduced_rotation(obj_rotation)
 
     mat_rotate_90deg = np.array(rotation_90deg.to_matrix())
-
+    
     # rotate axis of residual rotation
     ax_angle, theta = residual_rotation.to_quaternion().to_axis_angle()
     transformed_ax_angle = mat_rotate_90deg @ ax_angle
@@ -601,6 +611,7 @@ def generate_element(
             model_textures=model_textures,
             parent_cube_origin=cube_origin,
             parent_rotation_origin=rotation_origin,
+            parent_rotation_90deg=mat_rotate_90deg,
             export_uvs=export_uvs,
         )
         if child_element is not None:
@@ -641,7 +652,7 @@ def save_objects(
     filepath,
     objects,
     recenter_origin = False,
-    origin_shift = [0., 0., 0.],
+    translate_origin=None,         # origin translate either [x, y, z] or None
     generate_texture=True,
     use_only_exported_object_colors=False,
     texture_folder="",
@@ -658,8 +669,8 @@ def save_objects(
     Inputs:
     - filepath: Output file path name.
     - object: Iterable collection of Blender objects
-    - recenter_origin: Recenter model so that its center is at specified origin_shift
-    - origin_shift: New origin to shift
+    - recenter_origin: Recenter model so that its center is at specified translate_origin
+    - translate_origin: New origin to shift
     - generate_texture: Generate texture from solid material colors. By default, creates
             a color texture from all materials in file (so all groups of
             objects can share the same texture file).
@@ -677,7 +688,7 @@ def save_objects(
     
     # debug
     print("USE ORIGIN SHIFT:", recenter_origin)
-    print("ORIGIN SHIFT:", origin_shift)
+    print("ORIGIN SHIFT:", translate_origin)
     print("")
 
     # output json model stub
@@ -788,12 +799,13 @@ def save_objects(
     # root object post-processing:
     # 1. recenter with origin shift
     # ===========================
-    origin_shift = to_y_up(origin_shift)
-    for element in root_elements:
-        # re-centering
-        element["to"] = origin_shift + element["to"]
-        element["from"] = origin_shift + element["from"]
-        element["rotationOrigin"] = origin_shift + element["rotationOrigin"]  
+    if translate_origin is not None:
+        translate_origin = to_y_up(translate_origin)
+        for element in root_elements:
+            # re-centering
+            element["to"] = translate_origin + element["to"]
+            element["from"] = translate_origin + element["from"]
+            element["rotationOrigin"] = translate_origin + element["rotationOrigin"]  
     
     # ===========================
     # all object post processing
