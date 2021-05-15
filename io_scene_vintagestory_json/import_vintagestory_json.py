@@ -446,7 +446,7 @@ def parse_animation(
     num_frames = e.get("quantityframes") or 0
     if "onAnimationEnd" in e:
         marker = action.pose_markers.new(name="onAnimationEnd_{}".format(e["onAnimationEnd"]))
-        marker.frame = num_frames
+        marker.frame = num_frames - 1
         if e["onAnimationEnd"].lower() != "hold": # death animations hold on finish
             repeat_animation = True
     if "onActivityStopped" in e:
