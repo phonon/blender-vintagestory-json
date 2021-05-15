@@ -584,11 +584,12 @@ class ImportStats():
 
 def load(context,
          filepath,
-         import_uvs = True,               # import face uvs
-         import_textures = True,          # import textures into materials
-         translate_origin = None,         # origin translate either [x, y, z] or None
-         recenter_to_origin = False,      # recenter model to origin, overrides translate origin
-         debug_stats=True,                # print statistics on imported models
+         import_uvs=True,               # import face uvs
+         import_textures=True,          # import textures into materials
+         import_animations=True,        # load animations
+         translate_origin=None,         # origin translate either [x, y, z] or None
+         recenter_to_origin=False,      # recenter model to origin, overrides translate origin
+         debug_stats=True,              # print statistics on imported models
          **kwargs
 ):
     """Main import function"""
@@ -726,7 +727,7 @@ def load(context,
             bpy.context.scene.collection.objects.unlink(all_objects[index])
     
     # import animations
-    if "animations" in data and len(data["animations"]) > 0:
+    if import_animations and "animations" in data and len(data["animations"]) > 0:
         # go through objects, rebuild hierarchy using bones instead of direct parenting
         # to support bone based animation
         armature = rebuild_hierarchy_with_bones(root_objects)

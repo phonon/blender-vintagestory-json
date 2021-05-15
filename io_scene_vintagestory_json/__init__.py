@@ -62,7 +62,14 @@ class ImportVintageStoryJSON(Operator, ImportHelper):
         description="Z export offset (in Blender coordinates)",
         default=0,
     )
-    
+
+    # import animations
+    import_animations: BoolProperty(
+        name="Import Animations",
+        description="Import animations",
+        default=True,
+    )
+
     def execute(self, context):
         args = self.as_keywords()
         if args["translate_origin"] == True:
