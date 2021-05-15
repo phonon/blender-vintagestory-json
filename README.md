@@ -17,6 +17,7 @@ Export Guide/Notes
 ---------------------------------------
 - **Only exports cuboid objects** e.g. Object meshes must be rectangular prisms (8 vertices and 6 faces). The local mesh coordinates must be aligned to global XYZ axis. **Do not rotate the mesh vertices in edit mode.**
 - **All cuboids must be separate objects.**
+- **Apply all scale to objects before exporting.** Use `ctrl + A` to bring up Apply menu then hit `Apply > Scale`. (Also found in `Object > Apply > Scale` tab in viewport)
 - **Attach points**: Create an "Empty" type object (e.g. **Shift + A > Empty > Arrows**) and name it "attach_{name}", the {name} will become an attachpoint. e.g. "attach_Center" will generate an attachpoint called "Center".
 - **Animation metadata**: Animation metadata uses Action pose markers. First enable these in the Action Editor from the menu **Marker > Show Pose Markers**
     - **"onAnimationEnd" + "quantityFrames"**: Put a pose marker named "onAnimationEnd_{Action}" at the frame where the animation should end. "quantityFrames" will be that (frame + 1), with the assumption animations start at frame 0. "onAnimationEnd" will be the {Action}, e.g. "onAnimationEnd_Stop" at frame 119 will generate keys:
@@ -25,7 +26,7 @@ Export Guide/Notes
     - **"onActivityStopped"**: Put a pose marker anywhere named "onActivityStopped_{Action}". e.g. "onActivityStopped_PlayTillEnd" will generate key:
         - "onActivityStopped": "PlayTillEnd"
 - **Generating solid color textures:** By default, the exporter will generate a texture containing all solid material colors. So you can texture using just materials + colors without UV mapping or a texture image. This works alongside using texture images and uv mapping.
-
+- **Recalculate normals if textures are on wrong faces.** Applying negative scales can sometimes flip face normals inside, which causes incorrect auto-generated texture colors. Recalculate normals on all meshes to fix (`Select All` > `Edit Mode` > `Select All` > `ctrl + shift + N` to recalculate and **uncheck inside**).
 
 Import Guide/Notes
 ---------------------------------------

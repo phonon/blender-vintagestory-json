@@ -12,9 +12,9 @@ class VintageStoryPrimitiveAddBlock(bpy.types.Operator):
     def execute(self, context):
         bpy.ops.mesh.primitive_cube_add()
         cube = bpy.context.active_object
-        bpy.ops.transform.translate(value=(0, 0, 8.0))
         bpy.ops.transform.resize(value=(8.0, 8.0, 8.0))
         bpy.ops.object.transform_apply(location=False, scale=True, rotation=False)
+        bpy.ops.transform.translate(value=(0, 0, 8.0))
         cube.select_set(True)
 
         return {'FINISHED'}
