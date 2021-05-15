@@ -34,21 +34,46 @@ class ImportVintageStoryJSON(Operator, ImportHelper):
         default=True,
     )
 
-    # applies default shift from vintagestory origin
-    translate_origin_by_8: BoolProperty(
-        name="Translate by (-8, -8, -8)",
-        description="Recenter model with (-8, -8, -8) translation (VintageStory origin)",
-        default=False,
-    )
-
     recenter_to_origin: BoolProperty(
-        name="Recenter to Origin",
-        description="Recenter model median to origin",
+        name="Recenter on Origin",
+        description="Recenter model center to origin",
         default=False,
     )
 
+    # applies default shift from vintagestory origin
+    translate_origin: BoolProperty(
+        name="Translate Origin",
+        description="Translate model origin after import",
+        default=True,
+    )
+    
+    translate_origin_x: FloatProperty(
+        name="Translate X",
+        description="X export offset (in Blender coordinates)",
+        default=-8,
+    )
+    translate_origin_y: FloatProperty(
+        name="Translate Y",
+        description="Y export offset (in Blender coordinates)",
+        default=-8,
+    )
+    translate_origin_z: FloatProperty(
+        name="Translate Z",
+        description="Z export offset (in Blender coordinates)",
+        default=0,
+    )
+    
     def execute(self, context):
         args = self.as_keywords()
+        if args["translate_origin"] == True:
+            args["translate_origin"] = [
+                args["translate_origin_x"],
+                args["translate_origin_y"],
+                args["translate_origin_z"],
+            ]
+        else:
+            args["translate_origin"] = None
+
         return import_vintagestory_json.load(context, **args)
 
 

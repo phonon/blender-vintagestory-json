@@ -586,8 +586,8 @@ def load(context,
          filepath,
          import_uvs = True,               # import face uvs
          import_textures = True,          # import textures into materials
-         translate_origin_by_8 = False,   # shift model by (-8, -8, -8)
-         recenter_to_origin = True,       # recenter model to origin, overrides translate origin
+         translate_origin = None,         # origin translate either [x, y, z] or None
+         recenter_to_origin = False,      # recenter model to origin, overrides translate origin
          debug_stats=True,                # print statistics on imported models
          **kwargs
 ):
@@ -614,11 +614,8 @@ def load(context,
     all_objects = []   # all objects added
 
     # vintage story coordinate system origin
-    if translate_origin_by_8:
-        vintagestory_origin = np.array([8., 8., 8.])
-    else:
-        # ignore if not translating
-        vintagestory_origin = np.array([0., 0., 0.])
+    if translate_origin is not None:
+        translate_origin = Vector(translate_origin)
 
     # set scene collection as active
     scene_collection = bpy.context.view_layer.layer_collection
@@ -707,9 +704,15 @@ def load(context,
 
         mean = 0.5 * (model_v_min + model_v_max)
         mean = Vector((mean[0], mean[1], mean[2]))
+
         for obj in root_objects:
             obj.location = obj.location - mean
     
+    # do raw origin translation
+    elif translate_origin is not None:
+        for obj in root_objects:
+            obj.location = obj.location + translate_origin
+
     # import groups as collections
     for g in groups:
         name = g["name"]
@@ -730,12 +733,11 @@ def load(context,
 
         # load animations
         for anim in data["animations"]:
-            parse_animation(anim, armature, stats)
-            # try:
-            #     parse_animation(anim, armature, stats)
-            # except:
-            #     print("Failed to parse animation:", anim)
-            #     pass
+            try:
+                parse_animation(anim, armature, stats)
+            except:
+                print("Failed to parse animation:", anim)
+                pass
     
     # select newly imported objects
     for obj in bpy.context.selected_objects:
