@@ -724,8 +724,8 @@ def save_objects(
 
     # output json model stub
     model_json = {
-        "textureWidth": 16.0, # default, will be overridden
-        "textureHeight": 16.0, # default, will be overridden
+        "textureWidth": 16,  # default, will be overridden
+        "textureHeight": 16, # default, will be overridden
         "textures": {},
         "textureSizes": {},
     }
