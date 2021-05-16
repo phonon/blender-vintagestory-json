@@ -7,6 +7,10 @@ from math import inf
 import posixpath # need "/" separator
 import os
 import json
+from . import animation
+
+import importlib
+importlib.reload(animation)
 
 # convert deg to rad
 DEG_TO_RAD = math.pi / 180.0
@@ -58,6 +62,18 @@ CLOCKWISE_UV_ROTATION_LOOKUP = [
     [180, 90, 0, 270],
 ]
 
+# maps a PoseBone rotation mode name to the proper
+# action Fcurve property type
+ROTATION_MODE_TO_FCURVE_PROPERTY = {
+    "QUATERNION": "rotation_quaternion",
+    "XYZ": "rotation_euler",
+    "XZY": "rotation_euler",
+    "YXZ": "rotation_euler",
+    "YZX": "rotation_euler",
+    "ZXY": "rotation_euler",
+    "ZYX": "rotation_euler",
+    "AXIS_ANGLE": "rotation_euler", # ??? TODO: handle properly...
+}
 
 def filter_root_objects(objects):
     """Get root objects (objects without parents) in
@@ -502,7 +518,7 @@ def generate_element(
             tex_width = face_texture.size[0]
             tex_height = face_texture.size[1]
 
-            if export_uvs:                
+            if export_uvs:
                 # uv loop
                 loop_start = face.loop_start
                 face_uv_0 = uv_layer[loop_start].uv
@@ -680,6 +696,103 @@ def generate_element(
 
     return new_element
 
+
+def save_all_animations():
+    """Save all animation actions in Blender file
+    """
+    if len(bpy.data.armatures) == 0:
+        return []
+    
+    # get armature, assume single armature
+    armature = bpy.data.armatures[0]
+    obj_armature = bpy.data.objects[armature.name]
+    bones = obj_armature.pose.bones
+
+    animations = []
+
+    for action in bpy.data.actions:
+        # get all actions
+        fcurves = action.fcurves
+        
+        # skip empty actions
+        if len(fcurves) == 0:
+            continue
+        
+        # load keyframe data
+        action_name = action.name
+        animation_adapter = animation.AnimationAdapter(action, name=action_name)
+
+        # sort fcurves by bone
+        for fcu in fcurves:
+            # read bone name in format: path.bones["name"].property
+            data_path = fcu.data_path
+            if not data_path.startswith("pose.bones"):
+                continue
+            
+            # read bone name
+            idx_bone_name_start = 12                    # [" index
+            idx_bone_name_end = data_path.find("]", 12) # "] index
+            bone_name = data_path[idx_bone_name_start:idx_bone_name_end-1]
+
+            # skip if bone not found (TODO)
+            # if bone_name not in bones:
+            #     continue
+            
+            bone = bones[bone_name]
+            rotation_mode = bone.rotation_mode
+
+            # match data_path property to export name
+            property_name = data_path[idx_bone_name_end+2:]
+
+            if property_name != "location":
+                # make sure rotation curve associated with proper rotation mode
+                # e.g. bone with XYZ euler mode should only use "rotation_euler" fcurve
+                #      since rotation_quaternion fcurves can still exist
+                if ROTATION_MODE_TO_FCURVE_PROPERTY[rotation_mode] != property_name:
+                    continue
+
+            # add bone and fcurve to animation adapter
+            animation_adapter.add_bone(bone_name, rotation_mode)
+            animation_adapter.add_fcurve(fcu, data_path, fcu.array_index)
+
+        # convert from Blender bone format to Vintage story format
+        keyframes = animation_adapter.create_vintage_story_keyframes()
+
+        # action metadata
+        quantity_frames = None
+        on_activity_stopped = "Stop"
+        on_animation_end = "Stop"
+
+        # parse metadata from pose markers
+        for marker in action.pose_markers:
+            if marker.name.startswith("onActivityStopped_"):
+                on_activity_stopped = marker.name[18:]
+            elif marker.name.startswith("onAnimationEnd_"):
+                quantity_frames = marker.frame + 1
+                on_animation_end = marker.name[15:]
+        
+        # if quantity frames not set from marker metadata, set to last keyframe + 1 (starts at 0)
+        if quantity_frames is None:
+            if len(keyframes) > 0:
+                quantity_frames = int(keyframes[-1]["frame"]) + 1
+            else:
+                quantity_frames = 0
+        
+        # create exported animation
+        action_export = {
+            "name": action_name,
+            "code": action_name,
+            "quantityframes": quantity_frames,
+            "onActivityStopped": on_activity_stopped,
+            "onAnimationEnd": on_animation_end,
+            "keyframes": keyframes,
+        }
+
+        animations.append(action_export)
+
+    return animations
+
+
 def save_objects(
     filepath,
     objects,
@@ -691,11 +804,12 @@ def save_objects(
     export_uvs=True,
     minify=False,
     decimal_precision=-1,
+    export_animations=True,
     **kwargs
 ):
-    """Main exporter function. Parses Blender objects into Minecraft
+    """Main exporter function. Parses Blender objects into VintageStory
     cuboid format, uvs, and handles texture read and generation.
-    Will save .json file to output paths.
+    Will save .json file to output path.
 
     Inputs:
     - filepath: Output file path name.
@@ -716,6 +830,7 @@ def save_objects(
     - minify: Minimize output file size (write into single line, remove spaces, ...)
     - decimal_precision: Number of digits after decimal to keep in numbers.
             Requires `minify = True`. Set to -1 to disable.
+    - export_animations: Export bones and animation actions.
     """
     
     # debug
@@ -885,6 +1000,14 @@ def save_objects(
     # save
     model_json["elements"] = root_elements
     model_json["groups"] = groups_export
+
+    # ===========================
+    # export animations
+    # ===========================
+    if export_animations:
+        animations = save_all_animations()
+        if len(animations) > 0:
+            model_json["animations"] = animations
 
     # ===========================
     # minification options to reduce .json file size

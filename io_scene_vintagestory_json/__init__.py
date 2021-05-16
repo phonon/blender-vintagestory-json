@@ -179,10 +179,10 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
 
     # ================================
     # animation options EXPERIMENTAL
-    export_animation: BoolProperty(
-        name="Export animations",
-        description="Export bone animation keyframes into .json file",
-        default=False,
+    export_animations: BoolProperty(
+        name="Export Animations",
+        description="Export bone animations keyframes",
+        default=True,
     )
 
     def execute(self, context):
@@ -303,7 +303,7 @@ class VINTAGESTORY_PT_export_animation(bpy.types.Panel):
         sfile = context.space_data
         operator = sfile.active_operator
 
-        layout.prop(operator, "export_animation")
+        layout.prop(operator, "export_animations")
 
 # add io to menu
 def menu_func_import(self, context):

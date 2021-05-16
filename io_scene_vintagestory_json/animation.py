@@ -44,6 +44,71 @@ class FcurveRotationMatrixCache():
         return rot_mat
 
 
+class KeyframeAdapter():
+    """Intermediate representation of keyframes during export
+    to VintageStory. Represent keyframes as map of
+        frame # => keyframe_data
+    where keyframe_data = {
+        "frame": frame #
+        "elements": {
+            "bone name" => { offsetX, offsetY, offsetZ, rotationX, rotationY, rotationZ }
+        }
+    }
+    """
+    def __init__(self):
+        self.keyframes = {}
+
+
+    def tolist(self):
+        """Convert keyframes frame # => keyframe_data to flat sorted
+        array of keyframes
+        """
+        keyframes_list = []
+        frame_numbers = list(self.keyframes.keys())
+        frame_numbers.sort()
+        for frame in frame_numbers:
+            keyframes_list.append(self.keyframes[frame])
+        return keyframes_list
+    
+
+    def get_bone_keyframe(self, bone_name, frame):
+        """keyframes: map of frame # => keyframe data
+        frame: frame #
+        Get keyframe export data dict at a frame, or create new
+        frame data if does not exist
+        """
+        if frame not in self.keyframes:
+            self.keyframes[frame] = {
+                "frame": frame,
+                "elements": {},
+            }
+        
+        keyframe = self.keyframes[frame]
+        if bone_name not in keyframe["elements"]:
+            keyframe["elements"][bone_name] = {
+                "offsetX": 0.0,
+                "offsetY": 0.0,
+                "offsetZ": 0.0,
+                "rotationX": 0.0,
+                "rotationY": 0.0,
+                "rotationZ": 0.0,
+            }
+
+        return keyframe["elements"][bone_name]
+    
+
+    def add_bone_keyframe_points(self, bone_name, fcurve, field):
+        """keyframes: map of frame # => keyframe data
+        fcurve: fcurve data
+        field: output keyframe field, e.g. "offsetX" or "rotationX"
+        """
+        for p in fcurve.keyframe_points:
+            frame, val = p.co
+            frame = int(frame)
+            keyframe = self.get_bone_keyframe(bone_name, frame)
+            keyframe[field] = val
+
+
 class AnimationAdapter():
     """Helper to create, cache, store/load fcurves and convert
     between Blender and Vintage Story animation system.
@@ -54,7 +119,15 @@ class AnimationAdapter():
         v' = T*R*v
 
     This will resample between using RT <=> TR for position
-    keyframe points. 
+    keyframe points.
+
+    Storage format is a dict of :
+        fcu.data_path => [fcu.x, fcu.y, fcu.z, fcu.w]
+    Each bone name maps to a list of fcurves for each fcurve
+    array index. If the slot is None, no fcurve exists for that
+    index. e.g.
+        pose.bones["Body"].location => [FCurve, FCurve, FCurve, None]
+    Maps the Body bone data path to 3 FCurves for x, y, z index
     """
     def __init__(self, action, name=None):
         self.name = name     # name, for debugging only
@@ -67,6 +140,14 @@ class AnimationAdapter():
         """Map bone_name to rotation_mode.
         """
         self.bones[bone_name] = rotation_mode
+
+    
+    def add_fcurve(self, fcurve, name, index):
+        """Add existing fcurve to storage for given fcurve name
+        """
+        if name not in self.storage:
+            self.storage[name] = [None, None, None, None] # support x, y, z, w coord
+        self.storage[name][index] = fcurve
 
     
     def get(self, name, index):
@@ -138,11 +219,44 @@ class AnimationAdapter():
                     fcu_y.keyframe_points[k].co = frame, v.y
                     fcu_z.keyframe_points[k].co = frame, v.z
 
-
-    def resample_to_vintage_story(self):
-        """Resample from position keyframe data from using
-            VintageStory: w = R(v + u)
-            Blender:      w = Rv + u'
+    
+    def create_vintage_story_keyframes(self):
+        """Create list of keyframes for this action in VintageStory format.
+        1. Make keyframes list, where each frame has list of elements
+            keyframes = [
+                {
+                    frame: #,
+                    bone_name => { bone orientation },
+                }
+                ...
+            ]
+        2. Convert positions to VintageStory keyframe data format from:
+                VintageStory: w = R(v + u)
+                Blender:      w = Rv + u'
+            Where u' = R*u -> u = R^-1 * u'
+        3. Convert quaternion keyframes into euler keyframes
         """
-        # TODO, for exporting
-        pass
+        # map frame # => keyframe data
+        keyframes = KeyframeAdapter()
+
+        for bone_name, rotation_mode in self.bones.items():
+            fcu_name_prefix = "pose.bones[\"{}\"]".format(bone_name)
+            fcu_name_location = fcu_name_prefix + ".location"
+            if rotation_mode == "rotation_euler":
+                fcu_name_rotation = fcu_name_prefix + ".rotation_euler"
+            else:
+                fcu_name_rotation = fcu_name_prefix + ".rotation_quaternion"
+
+            if fcu_name_location in self.storage:
+                fcu_x = self.storage[fcu_name_location][0]
+                fcu_y = self.storage[fcu_name_location][1]
+                fcu_z = self.storage[fcu_name_location][2]
+
+                keyframes.add_bone_keyframe_points(bone_name, fcu_x, "offsetZ")
+                keyframes.add_bone_keyframe_points(bone_name, fcu_y, "offsetX")
+                keyframes.add_bone_keyframe_points(bone_name, fcu_z, "offsetY")
+
+        # convert keyframes map into a list of keyframes
+        keyframes_list = keyframes.tolist()
+
+        return keyframes_list
