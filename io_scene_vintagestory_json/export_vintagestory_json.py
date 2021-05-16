@@ -752,7 +752,7 @@ def save_all_animations():
                     continue
 
             # add bone and fcurve to animation adapter
-            animation_adapter.add_bone(bone_name, rotation_mode)
+            animation_adapter.add_bone(bone_name, ROTATION_MODE_TO_FCURVE_PROPERTY[rotation_mode])
             animation_adapter.add_fcurve(fcu, data_path, fcu.array_index)
 
         # convert from Blender bone format to Vintage story format

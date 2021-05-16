@@ -1,4 +1,7 @@
+import math
 from mathutils import Vector, Euler, Quaternion, Matrix
+
+RAD_TO_DEG = 180.0 / math.pi
 
 ROTATION_MODE_EULER = 0
 ROTATION_MODE_QUATERNION = 1
@@ -7,12 +10,13 @@ class FcurveRotationMatrixCache():
     """Cache of rotation matrices at given frames sampled from fcurves
     """
     def __init__(self, rotation_mode, fcu_x, fcu_y, fcu_z, fcu_w):
-        self.rotation_mode = ROTATION_MODE_EULER if rotation_mode == "rotation_euler" else ROTATION_MODE_QUATERION
+        self.rotation_mode = ROTATION_MODE_EULER if rotation_mode == "rotation_euler" else ROTATION_MODE_QUATERNION
         self.fcu_x = fcu_x
         self.fcu_y = fcu_y
         self.fcu_z = fcu_z
         self.fcu_w = fcu_w
-        self.cache = {}       # cache of frame => rotation matrix
+        self.cache = {}         # cache of frame => rotation matrix
+        self.inverse_cache = {} # cahe of frame => inverse rotation matrix
     
 
     def get(self, frame):
@@ -43,6 +47,33 @@ class FcurveRotationMatrixCache():
         rot_mat = Quaternion(qw, qx, qy, qz).to_matrix()
         return rot_mat
 
+    
+    def get_inverse(self, frame):
+        """Get inverse matrix, cache inverse for frame
+        """
+        if frame in self.inverse_cache:
+            return self.inverse_cache[frame]
+        else:
+            rot_mat = self.get(frame)
+            inverse_rot_mat = rot_mat.inverted_safe()
+            self.inverse_cache[frame] = inverse_rot_mat
+            return inverse_rot_mat
+
+
+class DefaultKeyframeSampler():
+    """Fake sampler to replicate Fcurve.evaluate(frame) for
+    action tracks that do not exist (e.g. x, y coords but no z).
+    Return a constant value, e.g. 
+        - Location x, y, z -> 0
+        - Euler x, y, z -> 0
+        - Quaternion x, y, z -> 0, w -> 1.
+    """
+    def __init__(self, val):
+        self.val = val
+    
+    def evaluate(self, frame):
+        return self.val
+
 
 class KeyframeAdapter():
     """Intermediate representation of keyframes during export
@@ -54,6 +85,8 @@ class KeyframeAdapter():
             "bone name" => { offsetX, offsetY, offsetZ, rotationX, rotationY, rotationZ }
         }
     }
+    Handle conversion from Blender space to VintageStory y-up when
+    keyframes are added.
     """
     def __init__(self):
         self.keyframes = {}
@@ -85,28 +118,29 @@ class KeyframeAdapter():
         
         keyframe = self.keyframes[frame]
         if bone_name not in keyframe["elements"]:
-            keyframe["elements"][bone_name] = {
-                "offsetX": 0.0,
-                "offsetY": 0.0,
-                "offsetZ": 0.0,
-                "rotationX": 0.0,
-                "rotationY": 0.0,
-                "rotationZ": 0.0,
-            }
+            keyframe["elements"][bone_name] = {}
 
         return keyframe["elements"][bone_name]
     
 
-    def add_bone_keyframe_points(self, bone_name, fcurve, field):
-        """keyframes: map of frame # => keyframe data
-        fcurve: fcurve data
-        field: output keyframe field, e.g. "offsetX" or "rotationX"
+    def add_location_keyframes(self, bone_name, frames, locations):
+        """Add location keyframes, do conversion to y-up
         """
-        for p in fcurve.keyframe_points:
-            frame, val = p.co
-            frame = int(frame)
+        for frame, loc in zip(frames, locations):
             keyframe = self.get_bone_keyframe(bone_name, frame)
-            keyframe[field] = val
+            keyframe["offsetX"] = loc.y
+            keyframe["offsetY"] = loc.z
+            keyframe["offsetZ"] = loc.x
+
+
+    def add_rotation_keyframes(self, bone_name, frames, rotations):
+        """Add rotation keyframes, do conversion to y-up
+        """
+        for frame, rot in zip(frames, rotations):
+            keyframe = self.get_bone_keyframe(bone_name, frame)
+            keyframe["rotationX"] = rot.y * RAD_TO_DEG
+            keyframe["rotationY"] = rot.z * RAD_TO_DEG
+            keyframe["rotationZ"] = rot.x * RAD_TO_DEG
 
 
 class AnimationAdapter():
@@ -128,12 +162,24 @@ class AnimationAdapter():
     index. e.g.
         pose.bones["Body"].location => [FCurve, FCurve, FCurve, None]
     Maps the Body bone data path to 3 FCurves for x, y, z index
+
+    For quaternion rotations "pose.bones["BoneName"].rotation_quaternion",
+        index 0 => fcu.w
+        index 1 => fcu.x
+        index 2 => fcu.y
+        index 3 => fcu.z
+
+    For euler rotations "pose.bones["BoneName"].rotation_euler",
+        index 0 => fcu.x
+        index 1 => fcu.y
+        index 2 => fcu.z
     """
     def __init__(self, action, name=None):
         self.name = name     # name, for debugging only
         self.action = action # Blender animation action
         self.storage = {}    # store fcurves by name
         self.bones = {}      # map of bones to rotation mode
+                             # ("rotation_euler" or "rotation_quaternion")
     
 
     def add_bone(self, bone_name, rotation_mode):
@@ -220,21 +266,53 @@ class AnimationAdapter():
                     fcu_z.keyframe_points[k].co = frame, v.z
 
     
+    def get_all_frames(self, fcurve_name):
+        """Return sorted list of all fcurve frame numbers
+        taken from all x, y, z, w channels.
+        """
+        frames = set()
+        for fcu in self.storage[fcurve_name]:
+            if fcu is not None:
+                for p in fcu.keyframe_points:
+                    frame, _ = p.co
+                    frames.add(int(frame))
+
+        frames = list(frames)
+        frames.sort()
+        return frames
+    
+
     def create_vintage_story_keyframes(self):
         """Create list of keyframes for this action in VintageStory format.
-        1. Make keyframes list, where each frame has list of elements
-            keyframes = [
-                {
-                    frame: #,
-                    bone_name => { bone orientation },
-                }
-                ...
-            ]
-        2. Convert positions to VintageStory keyframe data format from:
+        Assume keyframes can have holes (not all x, y, z coords) and can be
+        either use euler or quaternion rotation.
+            loc.x   o---o---o---o---o
+            loc.y   o-------o--------   <- holes
+            loc.z   -----------------   <- does not exist, use default sampler
+            rot.x   o-------------o-o   <- rotation keyframes may not match
+            rot.y   o-------------o-o      all location keyframes
+            rot.z   o-------------o-o
+            rot.w   o-------------o-o
+        1. For location, rotation keyframes, gather all frame numbers
+           where a keyframe exists from all x, y, z, and/or w fcurves.
+        2. At each frame number, generate the keyframe coordinate.
+            -> For missing points, use fcurve.evaluate() to sample
+            -> For missing fcurve, replace with a dummy fcurve with
+               evaluate() that returns default value (0 location/rotation)
+        3. For all keyframes, apply 90 deg rotations from objects (TODO)
+        4. Convert location keyframe positions to VintageStory format:
                 VintageStory: w = R(v + u)
                 Blender:      w = Rv + u'
             Where u' = R*u -> u = R^-1 * u'
-        3. Convert quaternion keyframes into euler keyframes
+        5. Convert quaternion keyframes into euler keyframes
+        6. Make keyframes list, where each frame has list of elements
+            keyframes = [
+                {
+                    frame: #,
+                    bone_name => { location, rotation },
+                }
+                ...
+            ]
         """
         # map frame # => keyframe data
         keyframes = KeyframeAdapter()
@@ -247,14 +325,84 @@ class AnimationAdapter():
             else:
                 fcu_name_rotation = fcu_name_prefix + ".rotation_quaternion"
 
-            if fcu_name_location in self.storage:
-                fcu_x = self.storage[fcu_name_location][0]
-                fcu_y = self.storage[fcu_name_location][1]
-                fcu_z = self.storage[fcu_name_location][2]
+            # =====================
+            # rotation keyframes
+            # =====================
+            if fcu_name_rotation in self.storage:
+                frames = self.get_all_frames(fcu_name_rotation)
+                rotation_keyframes = []
 
-                keyframes.add_bone_keyframe_points(bone_name, fcu_x, "offsetZ")
-                keyframes.add_bone_keyframe_points(bone_name, fcu_y, "offsetX")
-                keyframes.add_bone_keyframe_points(bone_name, fcu_z, "offsetY")
+                if rotation_mode == "rotation_euler":
+                    fcu_w = None
+                    fcu_x = self.storage[fcu_name_rotation][0] or DefaultKeyframeSampler(0.0)
+                    fcu_y = self.storage[fcu_name_rotation][1] or DefaultKeyframeSampler(0.0)
+                    fcu_z = self.storage[fcu_name_rotation][2] or DefaultKeyframeSampler(0.0)
+
+                    for frame in frames:
+                        rot = Euler((
+                            fcu_x.evaluate(frame),
+                            fcu_y.evaluate(frame),
+                            fcu_z.evaluate(frame),
+                        ))
+                        rotation_keyframes.append(rot)
+
+                else: # quaternion
+                    fcu_w = self.storage[fcu_name_rotation][0] or DefaultKeyframeSampler(1.0)
+                    fcu_x = self.storage[fcu_name_rotation][1] or DefaultKeyframeSampler(0.0)
+                    fcu_y = self.storage[fcu_name_rotation][2] or DefaultKeyframeSampler(0.0)
+                    fcu_z = self.storage[fcu_name_rotation][3] or DefaultKeyframeSampler(0.0)
+
+                    for frame in frames:
+                        rot = Quaternion((
+                            fcu_w.evaluate(frame),
+                            fcu_x.evaluate(frame),
+                            fcu_y.evaluate(frame),
+                            fcu_z.evaluate(frame),
+                        )).to_euler("XYZ")
+                        rotation_keyframes.append(rot)
+                    
+                # handles conversion degrees and y-up
+                keyframes.add_rotation_keyframes(bone_name, frames, rotation_keyframes)
+
+                # for converting location keyframes next
+                rotation_matrix_cache = FcurveRotationMatrixCache(
+                    rotation_mode,
+                    fcu_x,
+                    fcu_y,
+                    fcu_z,
+                    fcu_w,
+                )
+            else:
+                rotation_matrix_cache = None
+            
+            # =====================
+            # location keyframes
+            # =====================
+            if fcu_name_location in self.storage:
+                frames = self.get_all_frames(fcu_name_location)
+
+                fcu_x = self.storage[fcu_name_location][0] or DefaultKeyframeSampler(0.0)
+                fcu_y = self.storage[fcu_name_location][1] or DefaultKeyframeSampler(0.0)
+                fcu_z = self.storage[fcu_name_location][2] or DefaultKeyframeSampler(0.0)
+
+                location_keyframes = []
+                for frame in frames:
+                    loc = Vector((
+                        fcu_x.evaluate(frame),
+                        fcu_y.evaluate(frame),
+                        fcu_z.evaluate(frame),
+                    ))
+
+                    # apply inverse rotation matrix
+                    if loc.x != 0.0 or loc.y != 0.0 or loc.z != 0.0:
+                        if rotation_matrix_cache is not None:
+                            rot_mat = rotation_matrix_cache.get_inverse(frame)
+                            loc = rot_mat @ loc
+                    
+                    location_keyframes.append(loc)
+                
+                # handles conversion to y-up
+                keyframes.add_location_keyframes(bone_name, frames, location_keyframes)
 
         # convert keyframes map into a list of keyframes
         keyframes_list = keyframes.tolist()
