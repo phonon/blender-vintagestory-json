@@ -349,6 +349,9 @@ def create_color_texture(
 
 def generate_element(
     obj,                           # current object
+    parent=None,                   # parent Blender object
+    armature=None,                 # Blender Armature object (NOT Armature data)
+    bone_children=None,            # map of armature bones => children mesh objects
     groups=None,                   # running dict of collections
     model_colors=None,             # running dict of all model colors
     model_textures=None,           # running dict of all model textures
@@ -381,17 +384,28 @@ def generate_element(
     num_vertices = len(mesh.vertices)
     if num_vertices != 8:
         return None
-    
-    # object blender origin
-    origin = np.array(obj.location)
 
     # get local mesh coordinates
     v_local = np.zeros((3, 8))
     for i, v in enumerate(mesh.vertices):
         v_local[0:3,i] = v.co
-    
-    # rotation
+
+    """
+    object blender origin and rotation
+    -> if this is part of an armature, must get relative
+    to parent bone
+    """
+    origin = np.array(obj.location)
     obj_rotation = obj.rotation_euler
+
+    if armature is not None and parent is not None:
+        bone_name = obj.parent_bone
+        if bone_name != "" and bone_name in armature.data.bones:
+            bone_matrix = armature.data.bones[bone_name].matrix_local
+            # print(obj.name, "BONE MATRIX:", bone_matrix)
+        mat_loc = parent.matrix_world.inverted_safe() @ obj.matrix_world
+        origin, quat, _ = mat_loc.decompose()
+        obj_rotation = quat.to_euler("XYZ")
 
     # ================================
     # apply parent 90 deg rotations
@@ -643,7 +657,20 @@ def generate_element(
     # build children
     # ================================
     children = []
+    
+    obj_children = obj.children
 
+    # use parent bone children if this is part of an armature
+    if bone_children is not None:
+        obj_children = []
+        parent_bone_name = obj.parent_bone
+        if parent_bone_name != "" and parent_bone_name in armature.data.bones:
+            parent_bone = armature.data.bones[parent_bone_name]
+            for child_bone in parent_bone.children:
+                child_bone_name = child_bone.name
+                if child_bone_name in bone_children:
+                    obj_children.extend(bone_children[child_bone_name])
+    
     # combine 90 deg rotation matrix for child
     if mat_rotate_90deg is not None:
         if parent_rotation_90deg is not None:
@@ -651,9 +678,12 @@ def generate_element(
     else:
         mat_rotate_90deg = parent_rotation_90deg
     
-    for child in obj.children:
+    for child in obj_children:
         child_element = generate_element(
             child,
+            parent=obj,
+            armature=armature,
+            bone_children=bone_children,
             groups=groups,
             model_colors=model_colors,
             model_textures=model_textures,
@@ -695,6 +725,20 @@ def generate_element(
     new_element["children"] = children
 
     return new_element
+
+
+def get_bone_children(armature):
+    """Create map of bone name => child objects
+    from an armature's bones
+    """
+    bone_children = {}
+    for obj in armature.children:
+        if obj.parent_bone != "":
+            if obj.parent_bone not in bone_children:
+                bone_children[obj.parent_bone] = []
+            bone_children[obj.parent_bone].append(obj)
+    
+    return bone_children
 
 
 def save_all_animations():
@@ -864,10 +908,33 @@ def save_objects(
     # }
     model_textures = {}
     
-    # parse objects
+    # first pass: check if parsing an armature
+    armature = None
+    bone_children = None
+    export_objects = objects
     for obj in objects:
+        if isinstance(obj.data, bpy.types.Armature):
+            armature = obj
+            bone_children = get_bone_children(armature)
+
+            # do export using root bone children
+            root_bones = filter_root_objects(armature.data.bones)
+            export_objects = []
+            for bone in root_bones:
+                export_objects.extend(bone_children[bone.name])
+            
+            break
+    
+    print("EXPORT OBJECTS", export_objects)
+    print("BONE CHILDREN", bone_children)
+
+    # parse objects
+    for obj in export_objects:
         element = generate_element(
             obj,
+            parent=None,
+            armature=armature,
+            bone_children=bone_children,
             groups=groups,
             model_colors=model_colors,
             model_textures=model_textures,
