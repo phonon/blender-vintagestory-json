@@ -915,6 +915,12 @@ def save_objects(
     for obj in objects:
         if isinstance(obj.data, bpy.types.Armature):
             armature = obj
+            
+            # reset all pose bones in armature to bind pose
+            for bone in armature.pose.bones:
+                bone.matrix_basis = Matrix.Identity(4)
+            bpy.context.view_layer.update() # force update
+            
             bone_children = get_bone_children(armature)
 
             # do export using root bone children
