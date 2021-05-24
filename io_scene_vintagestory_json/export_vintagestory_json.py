@@ -116,13 +116,22 @@ def to_y_up(arr):
     return np.array([arr[1], arr[2], arr[0]])
 
 
-def to_vintagestory_rotation(arr):
+def to_vintagestory_rotation(euler):
     """Convert blender space rotation to VS space:
-    X -> Z
-    Y -> X
-    Z -> Y
+    VS space XYZ euler is blender space XZY euler,
+    so convert euler order, then rename axes
+        X -> Z
+        Y -> X
+        Z -> Y
+    Inputs:
+    - euler: Blender euler rotation
     """
-    return np.array([arr[1], arr[2], arr[0]])
+    r = euler.to_quaternion().to_euler("XZY")
+    return np.array([
+        r.y * RAD_TO_DEG,
+        r.z * RAD_TO_DEG,
+        r.x * RAD_TO_DEG,
+    ])
 
 
 def clamp_rotation(r):
@@ -440,18 +449,12 @@ def generate_element(
     # get min/max for to/from points
     v_min = np.amin(v_local, axis=1)
     v_max = np.amax(v_local, axis=1)
-    
-    rotation = np.array([
-        obj_rotation.x * RAD_TO_DEG,
-        obj_rotation.y * RAD_TO_DEG,
-        obj_rotation.z * RAD_TO_DEG,
-    ])
 
     # change axis to vintage story y-up axis
     v_min = to_y_up(v_min)
     v_max = to_y_up(v_max)
     origin = to_y_up(origin)
-    rotation = to_vintagestory_rotation(rotation)
+    rotation = to_vintagestory_rotation(obj_rotation)
     
     # translate to vintage story coord space
     rotation_origin = origin - parent_cube_origin + parent_rotation_origin
@@ -744,15 +747,19 @@ def get_bone_children(armature):
 def save_all_animations():
     """Save all animation actions in Blender file
     """
+    animations = []
+
     if len(bpy.data.armatures) == 0:
-        return []
+        return animations
     
     # get armature, assume single armature
     armature = bpy.data.armatures[0]
-    obj_armature = bpy.data.objects[armature.name]
+    try:
+        obj_armature = bpy.data.objects[armature.name]
+    except Exception as err:
+        print("Error finding armature:", err)
+        return animations
     bones = obj_armature.pose.bones
-
-    animations = []
 
     for action in bpy.data.actions:
         # get all actions

@@ -74,3 +74,9 @@ Import Options
 | Translate Y | -8.0 | `y` import recenter coordinate |
 | Translate Z | 0.0 | `z` import recenter coordinate |
 | Import Animations | True | Import animations, converts object hierachy to bone hierarchy |
+
+
+Known Issues (TODO):
+---------------------------------------
+- Cannot properly export animations after rotating model 90 deg
+- UV export of a cube converted into a plane by scaling a dimension to 0 (e.g. single plane, such as for hair) does not work
