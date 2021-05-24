@@ -385,6 +385,7 @@ def generate_element(
         from = from_blender_local + child_rotation_origin
         to = to_blender_local + child_rotation_origin
     """
+
     mesh = obj.data
     if not isinstance(mesh, bpy.types.Mesh):
         return None
@@ -407,9 +408,9 @@ def generate_element(
     origin = np.array(obj.location)
     obj_rotation = obj.rotation_euler
 
-    if armature is not None and parent is not None:
+    if armature is not None and parent is not None and obj.parent_bone != "":
         bone_name = obj.parent_bone
-        if bone_name != "" and bone_name in armature.data.bones:
+        if bone_name in armature.data.bones:
             bone_matrix = armature.data.bones[bone_name].matrix_local
             # print(obj.name, "BONE MATRIX:", bone_matrix)
         mat_loc = parent.matrix_world.inverted_safe() @ obj.matrix_world
@@ -660,12 +661,13 @@ def generate_element(
     # build children
     # ================================
     children = []
-    
-    obj_children = obj.children
+    attachpoints = []
+
+    obj_children = list(obj.children)
 
     # use parent bone children if this is part of an armature
     if bone_children is not None:
-        obj_children = []
+        # obj_children = []
         parent_bone_name = obj.parent_bone
         if parent_bone_name != "" and parent_bone_name in armature.data.bones:
             parent_bone = armature.data.bones[parent_bone_name]
@@ -682,21 +684,34 @@ def generate_element(
         mat_rotate_90deg = parent_rotation_90deg
     
     for child in obj_children:
-        child_element = generate_element(
-            child,
-            parent=obj,
-            armature=armature,
-            bone_children=bone_children,
-            groups=groups,
-            model_colors=model_colors,
-            model_textures=model_textures,
-            parent_cube_origin=cube_origin,
-            parent_rotation_origin=rotation_origin,
-            parent_rotation_90deg=mat_rotate_90deg,
-            export_uvs=export_uvs,
-        )
-        if child_element is not None:
-            children.append(child_element)
+        # attach point empty marker
+        if child.type == "EMPTY":
+            attachpoint_element = generate_attach_point(
+                child,
+                parent=obj,
+                armature=armature,
+                parent_cube_origin=cube_origin,
+                parent_rotation_origin=rotation_origin,
+                parent_rotation_90deg=mat_rotate_90deg,
+            )
+            if attachpoint_element is not None:
+                attachpoints.append(attachpoint_element)
+        else: # assume normal mesh
+            child_element = generate_element(
+                child,
+                parent=obj,
+                armature=armature,
+                bone_children=bone_children,
+                groups=groups,
+                model_colors=model_colors,
+                model_textures=model_textures,
+                parent_cube_origin=cube_origin,
+                parent_rotation_origin=rotation_origin,
+                parent_rotation_90deg=mat_rotate_90deg,
+                export_uvs=export_uvs,
+            )
+            if child_element is not None:
+                children.append(child_element)
 
     # ================================
     # build element
@@ -724,10 +739,90 @@ def generate_element(
     # add faces
     new_element["faces"] = faces
 
-    # add children last
+    # add children
     new_element["children"] = children
 
+    # add attachpoints if they exist
+    if len(attachpoints) > 0:
+        new_element["attachmentpoints"] = attachpoints
+    
     return new_element
+
+
+def generate_attach_point(
+    obj,                           # current object
+    parent=None,                   # parent Blender object
+    armature=None,                 # Blender Armature object (NOT Armature data)
+    parent_cube_origin=None,       # parent cube "from" origin (coords in VintageStory space)
+    parent_rotation_origin=None,   # parent object rotation origin (coords in VintageStory space)
+    parent_rotation_90deg=None,    # parent 90 degree rotation matrix
+):
+    """Parse an attachment point
+    """
+    if not obj.name.startswith("attach_"):
+        return None
+    
+    # get attachpoint name
+    name = obj.name[7:]
+
+    """
+    object blender origin and rotation
+    -> if this is part of an armature, must get relative
+    to parent bone
+    """
+    origin = np.array(obj.location)
+    obj_rotation = obj.rotation_euler
+
+    if armature is not None and obj.parent_bone != "":
+        bone_name = obj.parent_bone
+        if bone_name in armature.data.bones:
+            bone_matrix = armature.data.bones[bone_name].matrix_local
+            # print(obj.name, "BONE MATRIX:", bone_matrix)
+        mat_loc = parent.matrix_world.inverted_safe() @ obj.matrix_world
+        origin, quat, _ = mat_loc.decompose()
+        obj_rotation = quat.to_euler("XYZ")
+
+    # ================================
+    # apply parent 90 deg rotations
+    # ================================
+    if parent_rotation_90deg is not None:
+        ax_angle, theta = obj_rotation.to_quaternion().to_axis_angle()
+        transformed_ax_angle = parent_rotation_90deg @ ax_angle
+        obj_rotation = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
+        origin = parent_rotation_90deg @ origin
+    
+    # ================================
+    # constrain rotation to [-90, 90] by applying all further
+    # 90 deg rotations directly to vertices
+    # ================================
+    residual_rotation, rotation_90deg = get_reduced_rotation(obj_rotation)
+
+    if rotation_90deg is not None:
+        mat_rotate_90deg = np.array(rotation_90deg.to_matrix())
+    
+        # rotate axis of residual rotation
+        ax_angle, theta = residual_rotation.to_quaternion().to_axis_angle()
+        transformed_ax_angle = mat_rotate_90deg @ ax_angle
+        obj_rotation = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
+    else:
+        mat_rotate_90deg = None
+
+    # change axis to vintage story y-up axis
+    origin = to_y_up(origin)
+    rotation = to_vintagestory_rotation(obj_rotation)
+    
+    # translate to vintage story coord space
+    rotation_origin = origin - parent_cube_origin + parent_rotation_origin
+
+    return {
+        "code": name,
+        "posX": rotation_origin[0],
+        "posY": rotation_origin[1],
+        "posZ": rotation_origin[2],
+        "rotationX": rotation[0],
+        "rotationY": rotation[1],
+        "rotationZ": rotation[2],
+    }
 
 
 def get_bone_children(armature):
@@ -938,8 +1033,9 @@ def save_objects(
             
             break
     
-    print("EXPORT OBJECTS", export_objects)
-    print("BONE CHILDREN", bone_children)
+    # for debugging
+    # print("EXPORT OBJECTS", export_objects)
+    # print("BONE CHILDREN", bone_children)
 
     # parse objects
     for obj in export_objects:
