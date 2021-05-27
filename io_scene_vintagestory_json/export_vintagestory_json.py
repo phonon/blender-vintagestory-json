@@ -360,10 +360,11 @@ def generate_element(
     obj,                           # current object
     parent=None,                   # parent Blender object
     armature=None,                 # Blender Armature object (NOT Armature data)
-    bone_children=None,            # map of armature bones => children mesh objects
+    bone_hierarchy=None,           # map of armature bones => children mesh objects
     groups=None,                   # running dict of collections
     model_colors=None,             # running dict of all model colors
     model_textures=None,           # running dict of all model textures
+    parent_matrix_world=None,      # parent matrix world transform 
     parent_cube_origin=None,       # parent cube "from" origin (coords in VintageStory space)
     parent_rotation_origin=None,   # parent object rotation origin (coords in VintageStory space)
     parent_rotation_90deg=None,    # parent 90 degree rotation matrix
@@ -390,6 +391,8 @@ def generate_element(
     if not isinstance(mesh, bpy.types.Mesh):
         return None
     
+    obj_name = obj.name # may be overwritten if part of armature
+
     # count number of vertices, ignore if not cuboid
     num_vertices = len(mesh.vertices)
     if num_vertices != 8:
@@ -405,17 +408,52 @@ def generate_element(
     -> if this is part of an armature, must get relative
     to parent bone
     """
-    origin = np.array(obj.location)
-    obj_rotation = obj.rotation_euler
+    origin = obj.location.copy()
+    bone_location = None
+    bone_origin = None
+    obj_rotation = obj.rotation_euler.copy()
+    origin_bone_offset = np.array([0., 0., 0.])
+    matrix_world = obj.matrix_world.copy()
 
-    if armature is not None and parent is not None and obj.parent_bone != "":
+    if armature is not None and obj.parent_bone != "":
         bone_name = obj.parent_bone
-        if bone_name in armature.data.bones:
-            bone_matrix = armature.data.bones[bone_name].matrix_local
-            # print(obj.name, "BONE MATRIX:", bone_matrix)
-        mat_loc = parent.matrix_world.inverted_safe() @ obj.matrix_world
-        origin, quat, _ = mat_loc.decompose()
+        if bone_name in armature.data.bones and bone_name in bone_hierarchy and bone_hierarchy[bone_name].main.name == obj.name:
+            # origin_bone_offset = obj.location - origin
+            bone = armature.data.bones[bone_name]
+            # bone_location = relative location of bone from its parent bone
+            if bone.parent is not None:
+                bone_location = bone.head_local - bone.parent.head_local
+            else:
+                bone_location = bone.head_local
+            
+            bone_origin = bone.head_local
+            origin_bone_offset = origin - bone.head_local
+            print("OBJECT:", obj_name, "origin", origin, "bone_location", bone_location, "head_local", bone.head_local)
+
+            matrix_world.translation = bone.head_local
+
+    # more robust but higher performance cost, just get relative
+    # location/rotation from world matrices, required for complex
+    # parent hierarchies with armature bones + object-object parenting
+    # TODO: global flag for mesh with an armature so this is used instead
+    # of just obj.location and obj.rotation_euler
+    if parent_matrix_world is not None:
+        mat_local = parent_matrix_world.inverted_safe() @ matrix_world
+        origin, quat, _ = mat_local.decompose()
         obj_rotation = quat.to_euler("XYZ")
+
+        if bone_origin is not None:
+            # eff_origin_matrix = obj_rotation.to_matrix().to_4x4().inverted_safe() @ mat_local
+            # eff_origin, _, _ = eff_origin_matrix.decompose()
+            # origin_bone_offset = eff_origin - bone_origin
+            # print("EFFECTIVE ORIGIN:", eff_origin_matrix, eff_origin)
+            origin_bone_offset = obj_rotation.to_matrix().to_4x4().inverted_safe() @ origin_bone_offset
+
+    # using bone origin instead of parent origin offset
+    if bone_location is not None:
+        origin = bone_location
+    
+    print("OBJECT:", obj_name, "origin", origin, "obj_rotation", obj_rotation, "origin_bone_offset", origin_bone_offset, "parent_matrix_world", parent_matrix_world)
 
     # ================================
     # apply parent 90 deg rotations
@@ -455,12 +493,13 @@ def generate_element(
     v_min = to_y_up(v_min)
     v_max = to_y_up(v_max)
     origin = to_y_up(origin)
+    origin_bone_offset = to_y_up(origin_bone_offset)
     rotation = to_vintagestory_rotation(obj_rotation)
     
     # translate to vintage story coord space
     rotation_origin = origin - parent_cube_origin + parent_rotation_origin
-    v_from = v_min + rotation_origin
-    v_to = v_max + rotation_origin
+    v_from = v_min + rotation_origin + origin_bone_offset
+    v_to = v_max + rotation_origin + origin_bone_offset
     cube_origin = v_from
     
     # ================================
@@ -663,19 +702,6 @@ def generate_element(
     children = []
     attachpoints = []
 
-    obj_children = list(obj.children)
-
-    # use parent bone children if this is part of an armature
-    if bone_children is not None:
-        # obj_children = []
-        parent_bone_name = obj.parent_bone
-        if parent_bone_name != "" and parent_bone_name in armature.data.bones:
-            parent_bone = armature.data.bones[parent_bone_name]
-            for child_bone in parent_bone.children:
-                child_bone_name = child_bone.name
-                if child_bone_name in bone_children:
-                    obj_children.extend(bone_children[child_bone_name])
-    
     # combine 90 deg rotation matrix for child
     if mat_rotate_90deg is not None:
         if parent_rotation_90deg is not None:
@@ -683,7 +709,8 @@ def generate_element(
     else:
         mat_rotate_90deg = parent_rotation_90deg
     
-    for child in obj_children:
+    # parse direct children objects normally
+    for child in obj.children:
         # attach point empty marker
         if child.type == "EMPTY":
             attachpoint_element = generate_attach_point(
@@ -700,11 +727,51 @@ def generate_element(
             child_element = generate_element(
                 child,
                 parent=obj,
-                armature=armature,
-                bone_children=bone_children,
+                armature=None,
+                bone_hierarchy=None,
                 groups=groups,
                 model_colors=model_colors,
                 model_textures=model_textures,
+                parent_matrix_world=matrix_world,
+                parent_cube_origin=cube_origin,
+                parent_rotation_origin=rotation_origin,
+                parent_rotation_90deg=mat_rotate_90deg,
+                export_uvs=export_uvs,
+            )
+            if child_element is not None:
+                children.append(child_element)
+
+    # use parent bone children if this is part of an armature
+    if bone_hierarchy is not None:
+        bone_obj_children = []
+        parent_bone_name = obj.parent_bone
+        if parent_bone_name != "" and parent_bone_name in bone_hierarchy and parent_bone_name in armature.data.bones:
+            # if this is main bone, parent other objects to this
+            if bone_hierarchy[parent_bone_name].main.name == obj.name:
+                # rename this object to the bone name
+                obj_name = parent_bone_name
+
+                # parent other objects in same bone to this object
+                if len(bone_hierarchy[parent_bone_name].children) > 1:
+                    bone_obj_children.extend(bone_hierarchy[parent_bone_name].children[1:])
+                
+                # parent children main objects to this
+                parent_bone = armature.data.bones[parent_bone_name]
+                for child_bone in parent_bone.children:
+                    child_bone_name = child_bone.name
+                    if child_bone_name in bone_hierarchy:
+                        bone_obj_children.append(bone_hierarchy[child_bone_name].main)
+    
+        for child in bone_obj_children:
+            child_element = generate_element(
+                child,
+                parent=obj,
+                armature=armature,
+                bone_hierarchy=bone_hierarchy,
+                groups=groups,
+                model_colors=model_colors,
+                model_textures=model_textures,
+                parent_matrix_world=matrix_world,
                 parent_cube_origin=cube_origin,
                 parent_rotation_origin=rotation_origin,
                 parent_rotation_90deg=mat_rotate_90deg,
@@ -717,7 +784,7 @@ def generate_element(
     # build element
     # ================================
     new_element = {
-        "name": obj.name,
+        "name": obj_name,
         "from": v_from,
         "to": v_to,
         "rotationOrigin": rotation_origin,
@@ -825,18 +892,47 @@ def generate_attach_point(
     }
 
 
-def get_bone_children(armature):
-    """Create map of bone name => child objects
-    from an armature's bones
+class BoneNode():
+    """Contain information on bone hierarchy: bones in armature and
+    associated Blender object children of the bone. For exporting to
+    Vintage Story, there are no bones, so one of these objects needs to
+    act as the bone. The "main" object is the object that will be the
+    bone after export.
+
+    Keep main object in index 0 of children, so can easily get non-main
+    children using children[1:]
     """
-    bone_children = {}
+    def __init__(self):
+        self.main = None   # main object for this bone
+        self.children = [] # blender object children associated with this bone
+                           # main object should always be index 0
+
+
+def get_bone_hierarchy(armature):
+    """Create map of armature bone name => BoneNode objects.
+
+    "Main" bone determined by following rule in order:
+    1. if a child object has same name as the bone, set as main
+    2. else, use first object
+    """
+    bone_hierarchy = {}
     for obj in armature.children:
         if obj.parent_bone != "":
-            if obj.parent_bone not in bone_children:
-                bone_children[obj.parent_bone] = []
-            bone_children[obj.parent_bone].append(obj)
+            if obj.parent_bone not in bone_hierarchy:
+                bone_hierarchy[obj.parent_bone] = BoneNode()
+            bone_hierarchy[obj.parent_bone].children.append(obj)
     
-    return bone_children
+    for bone_name, node in bone_hierarchy.items():
+        for i, obj in enumerate(node.children):
+            if obj.name == bone_name:
+                node.main = obj
+                node.children[0], node.children[i] = node.children[i], node.children[0] # swap so main index 0
+                break
+        # use first object
+        if node.main is None:
+            node.main = node.children[0]
+    
+    return bone_hierarchy
 
 
 def save_all_animations():
@@ -950,6 +1046,7 @@ def save_objects(
     export_uvs=True,
     minify=False,
     decimal_precision=-1,
+    export_armature=True,
     export_animations=True,
     **kwargs
 ):
@@ -1012,38 +1109,42 @@ def save_objects(
     
     # first pass: check if parsing an armature
     armature = None
-    bone_children = None
+    bone_hierarchy = None
     export_objects = objects
-    for obj in objects:
-        if isinstance(obj.data, bpy.types.Armature):
-            armature = obj
-            
-            # reset all pose bones in armature to bind pose
-            for bone in armature.pose.bones:
-                bone.matrix_basis = Matrix.Identity(4)
-            bpy.context.view_layer.update() # force update
-            
-            bone_children = get_bone_children(armature)
 
-            # do export using root bone children
-            root_bones = filter_root_objects(armature.data.bones)
-            export_objects = []
-            for bone in root_bones:
-                export_objects.extend(bone_children[bone.name])
-            
-            break
-    
-    # for debugging
-    # print("EXPORT OBJECTS", export_objects)
-    # print("BONE CHILDREN", bone_children)
+    if export_armature:
+        for obj in objects:
+            if isinstance(obj.data, bpy.types.Armature):
+                armature = obj
+                
+                # reset all pose bones in armature to bind pose
+                for bone in armature.pose.bones:
+                    bone.matrix_basis = Matrix.Identity(4)
+                bpy.context.view_layer.update() # force update
+                
+                bone_hierarchy = get_bone_hierarchy(armature)
 
-    # parse objects
+                # do export using root bone children
+                root_bones = filter_root_objects(armature.data.bones)
+                export_objects = []
+                for bone in root_bones:
+                    export_objects.append(bone_hierarchy[bone.name].main)
+                
+                break
+        
+        # for debugging
+        print("EXPORT OBJECTS", export_objects)
+        print("BONE CHILDREN", bone_hierarchy)
+
+    # ===================================
+    # parse geometry
+    # ===================================
     for obj in export_objects:
         element = generate_element(
             obj,
             parent=None,
             armature=armature,
-            bone_children=bone_children,
+            bone_hierarchy=bone_hierarchy,
             groups=groups,
             model_colors=model_colors,
             model_textures=model_textures,

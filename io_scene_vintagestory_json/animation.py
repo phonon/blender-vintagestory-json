@@ -44,7 +44,7 @@ class FcurveRotationMatrixCache():
         qy = self.fcu_y.evaluate(frame)
         qz = self.fcu_z.evaluate(frame)
         qw = self.fcu_w.evaluate(frame)
-        rot_mat = Quaternion(qw, qx, qy, qz).to_matrix()
+        rot_mat = Quaternion((qw, qx, qy, qz)).to_matrix()
         return rot_mat
 
     
