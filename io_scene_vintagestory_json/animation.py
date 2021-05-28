@@ -6,6 +6,23 @@ RAD_TO_DEG = 180.0 / math.pi
 ROTATION_MODE_EULER = 0
 ROTATION_MODE_QUATERNION = 1
 
+def to_vintagestory_rotation(euler):
+    """Convert blender space rotation to VS space:
+    VS space XYZ euler is blender space XZY euler,
+    so convert euler order, then rename axes
+        X -> Z
+        Y -> X
+        Z -> Y
+    Inputs:
+    - euler: Blender euler rotation
+    """
+    r = euler.to_quaternion().to_euler("XZY")
+    return Euler((
+        r.y,
+        r.z,
+        r.x,
+    ))
+
 class FcurveRotationMatrixCache():
     """Cache of rotation matrices at given frames sampled from fcurves
     """
@@ -174,18 +191,19 @@ class AnimationAdapter():
         index 1 => fcu.y
         index 2 => fcu.z
     """
-    def __init__(self, action, name=None):
-        self.name = name     # name, for debugging only
-        self.action = action # Blender animation action
-        self.storage = {}    # store fcurves by name
-        self.bones = {}      # map of bones to rotation mode
-                             # ("rotation_euler" or "rotation_quaternion")
+    def __init__(self, action, name=None, armature=None):
+        self.name = name                  # name, for debugging only
+        self.action = action              # Blender animation action
+        self.storage = {}                 # store fcurves by name
+        self.armature = armature          # armature, if exist
+        self.bone_rotation_mode = {}      # map of bone name => rotation mode
+                                          # ("rotation_euler" or "rotation_quaternion")
     
 
-    def add_bone(self, bone_name, rotation_mode):
+    def set_bone_rotation_mode(self, bone_name, rotation_mode):
         """Map bone_name to rotation_mode.
         """
-        self.bones[bone_name] = rotation_mode
+        self.bone_rotation_mode[bone_name] = rotation_mode
 
     
     def add_fcurve(self, fcurve, name, index):
@@ -223,7 +241,7 @@ class AnimationAdapter():
         position and u' is effective Blender keyframe position. 
         Go through each coord, transform coordinates by rotation matrix.
         """
-        for bone, rotation_mode in self.bones.items():
+        for bone, rotation_mode in self.bone_rotation_mode.items():
             fcu_name_prefix = "pose.bones[\"{}\"]".format(bone)
             fcu_name_location = fcu_name_prefix + ".location"
             if rotation_mode == "rotation_euler":
@@ -317,13 +335,24 @@ class AnimationAdapter():
         # map frame # => keyframe data
         keyframes = KeyframeAdapter()
 
-        for bone_name, rotation_mode in self.bones.items():
+        ROT_BONE_TO_WORLD = Matrix.Rotation(math.radians(-90.0), 4, "X")
+
+        for bone_name, rotation_mode in self.bone_rotation_mode.items():
             fcu_name_prefix = "pose.bones[\"{}\"]".format(bone_name)
             fcu_name_location = fcu_name_prefix + ".location"
             if rotation_mode == "rotation_euler":
                 fcu_name_rotation = fcu_name_prefix + ".rotation_euler"
             else:
                 fcu_name_rotation = fcu_name_prefix + ".rotation_quaternion"
+
+            bone = self.armature.bones[bone_name]
+            # _, bone_rot, _ = bone.matrix_local.decompose()
+            # bone_rot = bone_rot.to_euler("XYZ")
+            # bone_rot.x += math.pi / 2.0
+
+            bone_rot = ROT_BONE_TO_WORLD @ bone.matrix_local.copy()
+            bone_rot.translation = Vector((0., 0., 0.))
+            # print(bone_name, "bone_rot_mat", bone_rot)
 
             # =====================
             # rotation keyframes
@@ -359,6 +388,12 @@ class AnimationAdapter():
                             fcu_y.evaluate(frame),
                             fcu_z.evaluate(frame),
                         )).to_euler("XYZ")
+                        # print("[", frame, "]", rot)
+                        # rotate axis of residual rotation
+                        ax_angle, theta = rot.to_quaternion().to_axis_angle()
+                        transformed_ax_angle = bone_rot @ ax_angle
+                        rot = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
+                        # print("[", frame, "] after rotated:", rot)
                         rotation_keyframes.append(rot)
                     
                 # handles conversion degrees and y-up

@@ -474,7 +474,7 @@ def parse_animation(
             fcu_name_rotation = fcu_name_prefix + ".rotation_euler"
 
             # add bone => rotation mode
-            animation_adapter.add_bone(bone, "rotation_euler")
+            animation_adapter.set_bone_rotation_mode(bone, "rotation_euler")
 
             # position fcurves
             fcu_px = animation_adapter.get(fcu_name_location, 0)

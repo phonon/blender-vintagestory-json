@@ -962,7 +962,7 @@ def save_all_animations():
         
         # load keyframe data
         action_name = action.name
-        animation_adapter = animation.AnimationAdapter(action, name=action_name)
+        animation_adapter = animation.AnimationAdapter(action, name=action_name, armature=armature)
 
         # sort fcurves by bone
         for fcu in fcurves:
@@ -994,7 +994,7 @@ def save_all_animations():
                     continue
 
             # add bone and fcurve to animation adapter
-            animation_adapter.add_bone(bone_name, ROTATION_MODE_TO_FCURVE_PROPERTY[rotation_mode])
+            animation_adapter.set_bone_rotation_mode(bone_name, ROTATION_MODE_TO_FCURVE_PROPERTY[rotation_mode])
             animation_adapter.add_fcurve(fcu, data_path, fcu.array_index)
 
         # convert from Blender bone format to Vintage story format
