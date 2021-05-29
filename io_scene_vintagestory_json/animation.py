@@ -350,9 +350,11 @@ class AnimationAdapter():
             # bone_rot = bone_rot.to_euler("XYZ")
             # bone_rot.x += math.pi / 2.0
 
-            bone_rot = ROT_BONE_TO_WORLD @ bone.matrix_local.copy()
+            bone_rot = bone.matrix_local.copy()
             bone_rot.translation = Vector((0., 0., 0.))
-            # print(bone_name, "bone_rot_mat", bone_rot)
+            # bone_rot = bone_rot.inverted_safe()
+            # print(bone_name, "bone.matrix_local", bone.matrix_local, bone.matrix_local.to_euler("XYZ"))
+            # print("bone_rot_mat", bone_rot, bone_rot.to_euler("XYZ"), "identity", bone_rot @ bone.matrix_local)
 
             # =====================
             # rotation keyframes
@@ -361,40 +363,35 @@ class AnimationAdapter():
                 frames = self.get_all_frames(fcu_name_rotation)
                 rotation_keyframes = []
 
-                if rotation_mode == "rotation_euler":
-                    fcu_w = None
-                    fcu_x = self.storage[fcu_name_rotation][0] or DefaultKeyframeSampler(0.0)
-                    fcu_y = self.storage[fcu_name_rotation][1] or DefaultKeyframeSampler(0.0)
-                    fcu_z = self.storage[fcu_name_rotation][2] or DefaultKeyframeSampler(0.0)
-
-                    for frame in frames:
+                for frame in frames:
+                    if rotation_mode == "rotation_euler":
+                        fcu_w = None
+                        fcu_x = self.storage[fcu_name_rotation][0] or DefaultKeyframeSampler(0.0)
+                        fcu_y = self.storage[fcu_name_rotation][1] or DefaultKeyframeSampler(0.0)
+                        fcu_z = self.storage[fcu_name_rotation][2] or DefaultKeyframeSampler(0.0)
                         rot = Euler((
                             fcu_x.evaluate(frame),
                             fcu_y.evaluate(frame),
                             fcu_z.evaluate(frame),
-                        ))
-                        rotation_keyframes.append(rot)
-
-                else: # quaternion
-                    fcu_w = self.storage[fcu_name_rotation][0] or DefaultKeyframeSampler(1.0)
-                    fcu_x = self.storage[fcu_name_rotation][1] or DefaultKeyframeSampler(0.0)
-                    fcu_y = self.storage[fcu_name_rotation][2] or DefaultKeyframeSampler(0.0)
-                    fcu_z = self.storage[fcu_name_rotation][3] or DefaultKeyframeSampler(0.0)
-
-                    for frame in frames:
+                        ), "XYZ").to_quaternion()
+                    
+                    else: # quaternion
+                        fcu_w = self.storage[fcu_name_rotation][0] or DefaultKeyframeSampler(1.0)
+                        fcu_x = self.storage[fcu_name_rotation][1] or DefaultKeyframeSampler(0.0)
+                        fcu_y = self.storage[fcu_name_rotation][2] or DefaultKeyframeSampler(0.0)
+                        fcu_z = self.storage[fcu_name_rotation][3] or DefaultKeyframeSampler(0.0)
                         rot = Quaternion((
                             fcu_w.evaluate(frame),
                             fcu_x.evaluate(frame),
                             fcu_y.evaluate(frame),
                             fcu_z.evaluate(frame),
-                        )).to_euler("XYZ")
-                        # print("[", frame, "]", rot)
-                        # rotate axis of residual rotation
-                        ax_angle, theta = rot.to_quaternion().to_axis_angle()
-                        transformed_ax_angle = bone_rot @ ax_angle
-                        rot = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
-                        # print("[", frame, "] after rotated:", rot)
-                        rotation_keyframes.append(rot)
+                        ))
+                    
+                    # rotate axis of residual rotation
+                    ax_angle, theta = rot.to_axis_angle()
+                    transformed_ax_angle = bone_rot @ ax_angle
+                    rot = Quaternion(transformed_ax_angle, theta).to_euler("XZY") # convert to VS axes
+                    rotation_keyframes.append(rot)
                     
                 # handles conversion degrees and y-up
                 keyframes.add_rotation_keyframes(bone_name, frames, rotation_keyframes)

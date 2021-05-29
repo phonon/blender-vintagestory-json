@@ -1167,7 +1167,7 @@ def save_objects(
                 color = get_material_color(mat)
                 if isinstance(color, tuple):
                     model_colors.add(color)
-        
+       
         tex_pixels, tex_size, color_tex_uv_map, default_color_uv = create_color_texture(model_colors)
 
         # texture output filepaths
