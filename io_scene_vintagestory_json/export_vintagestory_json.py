@@ -428,8 +428,6 @@ def generate_element(
             
             bone_origin = bone.head_local
             origin_bone_offset = origin - bone.head_local
-            print("OBJECT:", obj_name, "origin", origin, "bone_location", bone_location, "head_local", bone.head_local)
-
             matrix_world.translation = bone.head_local
 
     # more robust but higher performance cost, just get relative
@@ -442,19 +440,13 @@ def generate_element(
         origin, quat, _ = mat_local.decompose()
         obj_rotation = quat.to_euler("XYZ")
 
+        # adjustment for vertices
         if bone_origin is not None:
-            # eff_origin_matrix = obj_rotation.to_matrix().to_4x4().inverted_safe() @ mat_local
-            # eff_origin, _, _ = eff_origin_matrix.decompose()
-            # origin_bone_offset = eff_origin - bone_origin
-            # print("EFFECTIVE ORIGIN:", eff_origin_matrix, eff_origin)
             origin_bone_offset = obj_rotation.to_matrix().to_4x4().inverted_safe() @ origin_bone_offset
-
     # using bone origin instead of parent origin offset
-    if bone_location is not None:
+    elif bone_location is not None:
         origin = bone_location
     
-    print("OBJECT:", obj_name, "origin", origin, "obj_rotation", obj_rotation, "origin_bone_offset", origin_bone_offset, "parent_matrix_world", parent_matrix_world)
-
     # ================================
     # apply parent 90 deg rotations
     # ================================
@@ -1136,8 +1128,8 @@ def save_objects(
                 break
         
         # for debugging
-        print("EXPORT OBJECTS", export_objects)
-        print("BONE CHILDREN", bone_hierarchy)
+        # print("EXPORT OBJECTS", export_objects)
+        # print("BONE CHILDREN", bone_hierarchy)
 
     # ===================================
     # parse geometry
