@@ -475,12 +475,15 @@ def generate_element(
         mat_rotate_90deg = np.array(rotation_90deg.to_matrix())
     
         # rotate axis of residual rotation
-        ax_angle, theta = residual_rotation.to_quaternion().to_axis_angle()
-        transformed_ax_angle = mat_rotate_90deg @ ax_angle
-        obj_rotation = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
+        # TODO: need to handle with armature, right now messes up rotation
+        # relative to bone
+        if armature is None:
+            ax_angle, theta = residual_rotation.to_quaternion().to_axis_angle()
+            transformed_ax_angle = mat_rotate_90deg @ ax_angle
+            obj_rotation = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
 
-        # rotate mesh vertices
-        v_local = mat_rotate_90deg @ v_local
+            # rotate mesh vertices
+            v_local = mat_rotate_90deg @ v_local
     else:
         mat_rotate_90deg = None
     

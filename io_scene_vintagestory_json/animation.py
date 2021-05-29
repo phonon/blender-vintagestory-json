@@ -350,11 +350,9 @@ class AnimationAdapter():
             # bone_rot = bone_rot.to_euler("XYZ")
             # bone_rot.x += math.pi / 2.0
 
+            # TODO: cache these bone rotations
             bone_rot = bone.matrix_local.copy()
             bone_rot.translation = Vector((0., 0., 0.))
-            # bone_rot = bone_rot.inverted_safe()
-            # print(bone_name, "bone.matrix_local", bone.matrix_local, bone.matrix_local.to_euler("XYZ"))
-            # print("bone_rot_mat", bone_rot, bone_rot.to_euler("XYZ"), "identity", bone_rot @ bone.matrix_local)
 
             # =====================
             # rotation keyframes
@@ -429,7 +427,7 @@ class AnimationAdapter():
                     if loc.x != 0.0 or loc.y != 0.0 or loc.z != 0.0:
                         if rotation_matrix_cache is not None:
                             rot_mat = rotation_matrix_cache.get_inverse(frame)
-                            loc = rot_mat @ loc
+                            loc = bone_rot @ (rot_mat @ loc)
                     
                     location_keyframes.append(loc)
                 
