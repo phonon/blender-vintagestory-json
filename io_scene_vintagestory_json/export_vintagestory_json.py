@@ -1284,7 +1284,11 @@ def save_objects(
     # ===========================
     # minification options to reduce .json file size
     # ===========================
+    indent = 2
     if minify == True:
+        # remove json indent + newline
+        indent= None
+
         # go through json dict and replace all float with rounded strings
         if decimal_precision >= 0:
             def round_float(x):
@@ -1305,7 +1309,7 @@ def save_objects(
     
     # save json
     with open(filepath, "w") as f:
-        json.dump(model_json, f, separators=(",", ":"), indent=2)
+        json.dump(model_json, f, separators=(",", ":"), indent=indent)
 
 
 def save(
