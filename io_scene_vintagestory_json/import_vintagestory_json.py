@@ -599,7 +599,23 @@ def load(context,
     stats = ImportStats() if debug_stats else None
 
     with open(filepath, "r") as f:
-        data = json.load(f)
+        s = f.read()
+        try:
+            data = json.loads(s)
+        except Exception as err:
+            # sometimes format is in loose json, `name: value` instead of `"name": value`
+            # this tries to add quotes to keys without double quotes
+            # this simple regex fails if any strings contain colons
+            try:
+                import re
+                s2 = re.sub("(\w+):", r'"\1":',  s)
+                data = json.loads(s2)
+            # unhandled issue
+            except Exception as err:
+                raise err
+
+        
+        # data = json.load(f)
     
     # chunks of import file path, to get base directory
     filepath_parts = filepath.split(os.path.sep)
