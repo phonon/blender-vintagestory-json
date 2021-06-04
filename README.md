@@ -4,7 +4,7 @@ Import/export cuboid geometry between Blender and Vintage Story .json model form
 
 Supports import/export uvs. This addon can export solid material colors packed into an auto-generated image texture (alongside normal textures), so you can mix textures and solid face colors on Blender meshes.
 
-Tested on Blender 2.92.
+Tested on Blender 2.93 LTS.
 
 
 Installation

@@ -595,7 +595,7 @@ def load(context,
     """Main import function"""
 
     # debug
-    t_start = time.clock()
+    t_start = time.process_time()
     stats = ImportStats() if debug_stats else None
 
     with open(filepath, "r") as f:
@@ -764,7 +764,7 @@ def load(context,
     
     # print stats
     if debug_stats:
-        t_end = time.clock()
+        t_end = time.process_time()
         dt = t_end - t_start
         print("Imported .json in {}s".format(dt))
         print("- Cubes: {}".format(stats.cubes))
