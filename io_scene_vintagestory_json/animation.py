@@ -1,3 +1,19 @@
+"""Notes on Vintage Story animation format:
+See: https://github.com/anegostudios/vsmodelcreator/blob/master/src/at/vintagestory/modelcreator/model/KeyFrameElement.java
+Animations are additive euler rotations:
+    public void rotateAxis()
+    {
+        GL11.glRotated(AnimatedElement.rotationX + getRotationX(), 1, 0, 0);
+        GL11.glRotated(AnimatedElement.rotationY + getRotationY(), 0, 1, 0);
+        GL11.glRotated(AnimatedElement.rotationZ + getRotationZ(), 0, 0, 1);
+    }
+
+In blender, bone animations apply as separate rotation matrices
+    R = R_animation * R_bone
+
+Exact animation will not be identical.
+"""
+
 import math
 from mathutils import Vector, Euler, Quaternion, Matrix
 
@@ -334,9 +350,7 @@ class AnimationAdapter():
         """
         # map frame # => keyframe data
         keyframes = KeyframeAdapter()
-
-        ROT_BONE_TO_WORLD = Matrix.Rotation(math.radians(-90.0), 4, "X")
-
+        
         for bone_name, rotation_mode in self.bone_rotation_mode.items():
             fcu_name_prefix = "pose.bones[\"{}\"]".format(bone_name)
             fcu_name_location = fcu_name_prefix + ".location"
@@ -346,13 +360,21 @@ class AnimationAdapter():
                 fcu_name_rotation = fcu_name_prefix + ".rotation_quaternion"
 
             bone = self.armature.bones[bone_name]
-            # _, bone_rot, _ = bone.matrix_local.decompose()
-            # bone_rot = bone_rot.to_euler("XYZ")
-            # bone_rot.x += math.pi / 2.0
 
             # TODO: cache these bone rotations
             bone_rot = bone.matrix_local.copy()
             bone_rot.translation = Vector((0., 0., 0.))
+            
+            # rotate axis of residual rotation
+            if bone.parent is not None:
+                mat_local = bone.parent.matrix_local.inverted_safe() @ bone.matrix_local
+            else:
+                mat_local = bone.matrix_local.copy()
+            
+            _, bone_rot_quat, _ = mat_local.decompose()
+            bone_rot_local_euler = bone_rot_quat.to_euler("XYZ")
+            bone_rot_local = mat_local.copy()
+            bone_rot_local.translation = Vector((0., 0., 0.))
 
             # =====================
             # rotation keyframes
@@ -367,7 +389,7 @@ class AnimationAdapter():
                         fcu_x = self.storage[fcu_name_rotation][0] or DefaultKeyframeSampler(0.0)
                         fcu_y = self.storage[fcu_name_rotation][1] or DefaultKeyframeSampler(0.0)
                         fcu_z = self.storage[fcu_name_rotation][2] or DefaultKeyframeSampler(0.0)
-                        rot = Euler((
+                        rot_anim = Euler((
                             fcu_x.evaluate(frame),
                             fcu_y.evaluate(frame),
                             fcu_z.evaluate(frame),
@@ -378,18 +400,45 @@ class AnimationAdapter():
                         fcu_x = self.storage[fcu_name_rotation][1] or DefaultKeyframeSampler(0.0)
                         fcu_y = self.storage[fcu_name_rotation][2] or DefaultKeyframeSampler(0.0)
                         fcu_z = self.storage[fcu_name_rotation][3] or DefaultKeyframeSampler(0.0)
-                        rot = Quaternion((
+                        rot_anim = Quaternion((
                             fcu_w.evaluate(frame),
                             fcu_x.evaluate(frame),
                             fcu_y.evaluate(frame),
                             fcu_z.evaluate(frame),
                         ))
                     
-                    # rotate axis of residual rotation
-                    ax_angle, theta = rot.to_axis_angle()
-                    transformed_ax_angle = bone_rot @ ax_angle
-                    rot = Quaternion(transformed_ax_angle, theta).to_euler("XZY") # convert to VS axes
-                    rotation_keyframes.append(rot)
+                    # transform to bone euler
+                    ax_angle, theta = rot_anim.to_axis_angle()
+                    transformed_ax_angle = bone_rot_local @ ax_angle
+                    rot_anim_local = Quaternion(transformed_ax_angle, theta)
+                    rot_anim_local_mat = rot_anim_local.to_matrix().to_4x4()
+
+                    bone_rot_local = bone_rot_quat.to_euler("XYZ").to_matrix().to_4x4()
+
+                    rot_eff = rot_anim_local_mat @ bone_rot_local
+                    rot_eff_euler = rot_eff.to_euler("XYZ")
+
+                    bone_rot_local_euler = bone_rot_local_euler.to_quaternion().to_euler("XZY")
+                    rot_eff_euler = rot_eff_euler.to_quaternion().to_euler("XZY")
+
+                    rx = rot_eff_euler.x - bone_rot_local_euler.x
+                    ry = rot_eff_euler.y - bone_rot_local_euler.y
+                    rz = rot_eff_euler.z - bone_rot_local_euler.z
+                    rot_vs = Euler((rx, ry, rz), "XZY")
+                    rotation_keyframes.append(rot_vs)
+
+                    # DEPRECATED:
+                    # ax_angle, theta = rot.to_axis_angle()
+                    # if bone.parent is not None:
+                    #     parent_bone = bone.parent
+                    #     parent_bone_rot = parent_bone.matrix_local.copy()
+                    #     parent_bone_rot.translation = Vector((0., 0., 0.))
+                    #     transformed_ax_angle = parent_bone_rot.inverted_safe() @ ax_angle
+                    # else:
+                    #     transformed_ax_angle = ax_angle
+                    # transformed_ax_angle = bone_rot @ transformed_ax_angle
+                    # rot = Quaternion(transformed_ax_angle, theta).to_euler("XZY") # convert to VS axes
+                    # rotation_keyframes.append(rot)
                     
                 # handles conversion degrees and y-up
                 keyframes.add_rotation_keyframes(bone_name, frames, rotation_keyframes)
@@ -426,9 +475,8 @@ class AnimationAdapter():
                     # apply inverse rotation matrix
                     if loc.x != 0.0 or loc.y != 0.0 or loc.z != 0.0:
                         if rotation_matrix_cache is not None:
-                            rot_mat = rotation_matrix_cache.get_inverse(frame)
-                            loc = bone_rot @ (rot_mat @ loc)
-                    
+                            rot_mat_inverse = rotation_matrix_cache.get_inverse(frame)
+                            loc = rot_mat_inverse @ loc
                     location_keyframes.append(loc)
                 
                 # handles conversion to y-up

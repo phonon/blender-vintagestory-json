@@ -85,6 +85,17 @@ def filter_root_objects(objects):
     return root_objects
 
 
+def matrix_roughly_equal(m1, m2, eps=1e-5):
+    """Return if two matrices are roughly equal
+    by comparing elements.
+    """
+    for i in range(0, 4):
+        for j in range(0, 4):
+            if abs(m1[i][j] - m2[i][j]) > eps:
+                return False
+    return True
+
+
 def sign(x):
     """Return sign of value as 1 or -1"""
     if x >= 0:
@@ -361,6 +372,7 @@ def generate_element(
     parent=None,                   # parent Blender object
     armature=None,                 # Blender Armature object (NOT Armature data)
     bone_hierarchy=None,           # map of armature bones => children mesh objects
+    is_bone_child=False,           # is a child to a dummy bone element
     groups=None,                   # running dict of collections
     model_colors=None,             # running dict of all model colors
     model_textures=None,           # running dict of all model textures
@@ -429,13 +441,14 @@ def generate_element(
             bone_origin = bone.head_local
             origin_bone_offset = origin - bone.head_local
             matrix_world.translation = bone.head_local
-
+    
     # more robust but higher performance cost, just get relative
     # location/rotation from world matrices, required for complex
     # parent hierarchies with armature bones + object-object parenting
     # TODO: global flag for mesh with an armature so this is used instead
     # of just obj.location and obj.rotation_euler
     if parent_matrix_world is not None:
+        # print(obj.name, "parent_matrix_world", parent_matrix_world)
         mat_local = parent_matrix_world.inverted_safe() @ matrix_world
         origin, quat, _ = mat_local.decompose()
         obj_rotation = quat.to_euler("XYZ")
@@ -461,23 +474,23 @@ def generate_element(
     # constrain rotation to [-90, 90] by applying all further
     # 90 deg rotations directly to vertices
     # ================================
-    residual_rotation, rotation_90deg = get_reduced_rotation(obj_rotation)
+    mat_rotate_90deg = None
 
-    if rotation_90deg is not None:
-        mat_rotate_90deg = np.array(rotation_90deg.to_matrix())
-    
-        # rotate axis of residual rotation
-        # TODO: need to handle with armature, right now messes up rotation
-        # relative to bone
-        if armature is None:
-            ax_angle, theta = residual_rotation.to_quaternion().to_axis_angle()
-            transformed_ax_angle = mat_rotate_90deg @ ax_angle
-            obj_rotation = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
+    if is_bone_child == False: # TODO: temporary due to improper 90 deg rotation with bones
+        residual_rotation, rotation_90deg = get_reduced_rotation(obj_rotation)
+        if rotation_90deg is not None:
+            mat_rotate_90deg = np.array(rotation_90deg.to_matrix())
+        
+            # rotate axis of residual rotation
+            # TODO: need to handle with armature, right now messes up rotation
+            # relative to bone
+            if armature is None:
+                ax_angle, theta = residual_rotation.to_quaternion().to_axis_angle()
+                transformed_ax_angle = mat_rotate_90deg @ ax_angle
+                obj_rotation = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
 
-            # rotate mesh vertices
-            v_local = mat_rotate_90deg @ v_local
-    else:
-        mat_rotate_90deg = None
+                # rotate mesh vertices
+                v_local = mat_rotate_90deg @ v_local
     
     # create output coords, rotation
     # get min/max for to/from points
@@ -887,6 +900,33 @@ def generate_attach_point(
     }
 
 
+def create_dummy_bone_object(
+    name,
+    location, # in blender coordinates
+    rotation, # in blender coordinates
+):
+    loc = to_y_up(location)
+    rot = to_vintagestory_rotation(rotation)
+    return {
+        "name": name,
+        "from": loc, 
+        "to": loc, 
+        "rotationOrigin": loc,
+        "rotationX": rot[0],
+        "rotationY": rot[1],
+        "rotationZ": rot[2],
+        "faces": {
+            "north": { "texture": "#null", "uv": [ 0.0, 0.0, 0.0, 0.0 ], "enabled": False },
+            "east": { "texture": "#hyena", "uv": [ 0.0, 0.0, 0.0, 0.0 ], "enabled": False },
+            "south": { "texture": "#hyena", "uv": [ 0.0, 0.0, 0.0, 0.0 ], "enabled": False },
+            "west": { "texture": "#hyena", "uv": [ 0.0, 0.0, 0.0, 0.0 ], "enabled": False },
+            "up": { "texture": "#hyena", "uv": [ 0.0, 0.0, 0.0, 0.0 ], "enabled": False },
+            "down": { "texture": "#hyena", "uv": [ 0.0, 0.0, 0.0, 0.0 ], "enabled": False },
+        },
+        "children": [],
+    }
+
+
 class BoneNode():
     """Contain information on bone hierarchy: bones in armature and
     associated Blender object children of the bone. For exporting to
@@ -1030,6 +1070,114 @@ def save_all_animations():
     return animations
 
 
+def save_objects_by_armature(
+    bone,
+    bone_hierarchy,
+    armature=None,
+    groups=None,
+    model_colors=None,
+    model_textures=None,
+    parent_matrix_world=None,
+    parent_cube_origin=np.array([0., 0., 0.]),
+    parent_rotation_origin=np.array([0., 0., 0.]),
+    export_uvs=True,               # export uvs
+    export_generated_texture=True, # export generated color texture
+):
+    """Recursively save object children of a bone to a parent
+    bone object
+    """
+    bone_element = None
+    
+    if bone.name in bone_hierarchy:
+        # print(bone.name, bone, bone.children, bone_hierarchy[bone.name].main)
+
+        bone_object = bone_hierarchy[bone.name].main
+        bone_children = bone_hierarchy[bone.name].children
+        mat_world = bone.matrix_local.copy()
+
+        # main bone object world transform == bone transform, can simply use 
+        # as the bone
+        if bone_object is not None and matrix_roughly_equal(bone.matrix_local, bone_object.matrix_world):
+            # print(bone.name)
+            # print("bone.matrix_local:", bone.matrix_local)
+            # print("object.world_matrix:", bone_object.matrix_world)
+            # print("MATRIX EQUAL")
+            bone_element = generate_element(
+                bone_object,
+                parent=None,
+                armature=None,
+                bone_hierarchy=None,
+                groups=groups,
+                model_colors=model_colors,
+                model_textures=model_textures,
+                parent_matrix_world=parent_matrix_world,
+                parent_cube_origin=parent_cube_origin,
+                parent_rotation_origin=parent_rotation_origin,
+                export_uvs=export_uvs,
+                export_generated_texture=export_generated_texture,
+            )
+            if len(bone_children) > 1:
+                bone_children = bone_children[1:]
+            else:
+                bone_children = []
+        
+        # main object could not be used, insert a dummy object with bone transform
+        if bone_element is None:
+            if parent_matrix_world is not None:
+                mat_local = parent_matrix_world.inverted_safe() @ mat_world
+            else:
+                mat_local = mat_world
+            bone_loc, quat, _ = mat_local.decompose()
+            bone_rot = quat.to_euler("XYZ")
+            bone_element = create_dummy_bone_object(bone.name, bone_loc, bone_rot)
+        
+            cube_origin = bone.head
+            rotation_origin = bone.head
+        else:
+            cube_origin = bone_element["from"]
+            rotation_origin = bone_element["rotationOrigin"]
+        
+        # insert object children of the bone object
+        for obj in bone_children:
+            obj_element = generate_element(
+                obj,
+                parent=None,
+                armature=None,
+                bone_hierarchy=None,
+                is_bone_child=True,
+                groups=groups,
+                model_colors=model_colors,
+                model_textures=model_textures,
+                parent_matrix_world=mat_world,
+                parent_cube_origin=cube_origin,
+                parent_rotation_origin=rotation_origin,
+                export_uvs=export_uvs,
+                export_generated_texture=export_generated_texture,
+            )
+            if obj_element is not None:
+                bone_element["children"].append(obj_element)
+
+        # recursively add child bones
+        for child_bone in bone.children:
+            child_element = save_objects_by_armature(
+                child_bone,
+                bone_hierarchy,
+                armature=armature,
+                groups=groups,
+                model_colors=model_colors,
+                model_textures=model_textures,
+                parent_matrix_world=mat_world,
+                parent_cube_origin=cube_origin,
+                parent_rotation_origin=rotation_origin,
+                export_uvs=export_uvs,
+                export_generated_texture=export_generated_texture,
+            )
+            if child_element is not None:
+                bone_element["children"].append(child_element)
+    
+    return bone_element
+
+
 def save_objects(
     filepath,
     objects,
@@ -1132,24 +1280,40 @@ def save_objects(
         # print("BONE CHILDREN", bone_hierarchy)
 
     # ===================================
-    # parse geometry
+    # export by armature
     # ===================================
-    for obj in export_objects:
-        element = generate_element(
-            obj,
-            parent=None,
-            armature=armature,
-            bone_hierarchy=bone_hierarchy,
-            groups=groups,
-            model_colors=model_colors,
-            model_textures=model_textures,
-            parent_cube_origin=np.array([0., 0., 0.]),     # root cube origin 
-            parent_rotation_origin=np.array([0., 0., 0.]), # root rotation origin
-            export_uvs=export_uvs,
-        )
-
-        if element is not None:
-            root_elements.append(element)
+    if armature is not None:
+        for root_bone in root_bones:
+            element = save_objects_by_armature(
+                root_bone,
+                bone_hierarchy,
+                armature=armature,
+                groups=groups,
+                model_colors=model_colors,
+                model_textures=model_textures,
+                export_uvs=export_uvs,
+            )
+            if element is not None:
+                root_elements.append(element)
+    else:
+        # ===================================
+        # normal export geometry tree
+        # ===================================
+        for obj in export_objects:
+            element = generate_element(
+                obj,
+                parent=None,
+                armature=armature,
+                bone_hierarchy=bone_hierarchy,
+                groups=groups,
+                model_colors=model_colors,
+                model_textures=model_textures,
+                parent_cube_origin=np.array([0., 0., 0.]),     # root cube origin 
+                parent_rotation_origin=np.array([0., 0., 0.]), # root rotation origin
+                export_uvs=export_uvs,
+            )
+            if element is not None:
+                root_elements.append(element)
     
     # ===========================
     # generate color texture image

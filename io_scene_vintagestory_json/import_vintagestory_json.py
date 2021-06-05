@@ -5,7 +5,7 @@ import math
 import time
 from math import inf
 import bpy
-from mathutils import Vector
+from mathutils import Vector, Euler, Quaternion
 from . import animation
 
 import importlib
@@ -468,13 +468,13 @@ def parse_animation(
     
     for keyframe in keyframes:
         frame = keyframe["frame"]
-        for bone, data in keyframe["elements"].items():
-            fcu_name_prefix = "pose.bones[\"{}\"]".format(bone)
+        for bone_name, data in keyframe["elements"].items():
+            fcu_name_prefix = "pose.bones[\"{}\"]".format(bone_name)
             fcu_name_location = fcu_name_prefix + ".location"
             fcu_name_rotation = fcu_name_prefix + ".rotation_euler"
 
             # add bone => rotation mode
-            animation_adapter.set_bone_rotation_mode(bone, "rotation_euler")
+            animation_adapter.set_bone_rotation_mode(bone_name, "rotation_euler")
 
             # position fcurves
             fcu_px = animation_adapter.get(fcu_name_location, 0)
@@ -494,12 +494,89 @@ def parse_animation(
             if "offsetZ" in data:
                 add_keyframe_point(fcu_px, frame, data["offsetZ"])
             
-            if "rotationX" in data:
-                add_keyframe_point(fcu_ry, frame, data["rotationX"] * DEG_TO_RAD)
-            if "rotationY" in data:
-                add_keyframe_point(fcu_rz, frame, data["rotationY"] * DEG_TO_RAD)
-            if "rotationZ" in data:
-                add_keyframe_point(fcu_rx, frame, data["rotationZ"] * DEG_TO_RAD)
+            bone = armature.data.bones[bone_name]
+            bone_rot = bone.matrix_local.copy()
+            bone_rot.translation = Vector((0., 0., 0.))
+
+            # _, bone_rot_quat, _ = bone.matrix_local.decompose()
+            # bone_rot_euler = bone_rot_quat.to_euler("XYZ")
+
+            rx = data["rotationX"] * DEG_TO_RAD if "rotationX" in data else None
+            ry = data["rotationY"] * DEG_TO_RAD if "rotationY" in data else None
+            rz = data["rotationZ"] * DEG_TO_RAD if "rotationZ" in data else None
+            if rx is not None or ry is not None or rz is not None:
+                rx = rx if rx is not None else 0.0
+                ry = ry if ry is not None else 0.0
+                rz = rz if rz is not None else 0.0
+                rot_vs_original = Euler((rz, rx, ry), "XZY")
+                rot_vs = Euler((rz, rx, ry), "XZY").to_quaternion().to_euler("XYZ")
+                rx = rot_vs.x
+                ry = rot_vs.y
+                rz = rot_vs.z
+
+                if bone.parent is not None:
+                    mat_local = bone.parent.matrix_local.inverted_safe() @ bone.matrix_local
+                else:
+                    mat_local = bone.matrix_local.copy()
+                
+                bone_rot_local = mat_local.copy()
+                bone_rot_local.translation = Vector((0., 0., 0.))
+
+                _, bone_rot_quat, _ = mat_local.decompose()
+
+                bone_rot_eff = bone_rot_quat.to_euler("XYZ")
+                bone_rot_eff.x += rx
+                bone_rot_eff.y += ry
+                bone_rot_eff.z += rz
+                print(bone.name, "bone_rot_eff", bone_rot_eff, "bone_rot_local", bone_rot_local.to_euler("XYZ"))
+
+                rot_eff = bone_rot_eff.to_matrix().to_4x4()
+                rot_mat = rot_eff @ bone_rot_local.inverted_safe()
+                rot = rot_mat.to_euler("XYZ")
+
+                rot_result_mat = rot.to_matrix().to_4x4() @ bone_rot_local
+                rot_result = rot_result_mat.to_euler("XYZ")
+
+                if bone.name == "tail":
+                    print(bone.name, "rot_vs:", rot_vs, "rot_vs_original:", rot_vs_original)
+                    print(bone.name, "using direct values:", Euler((rz, rx, ry), "XYZ"), "rot:", rot, "target_rot:", bone_rot_eff)
+                    print(bone.name, "ROT RESULT", rot_result, rot_result.x * animation.RAD_TO_DEG, rot_result.y * animation.RAD_TO_DEG, rot_result.z * animation.RAD_TO_DEG)
+                    print("rot_result * rot_local = ", rot_mat @ bone_rot_local)
+                    print("rot_eff = ", rot_eff, rot_eff.to_euler("XYZ"))
+                    print("rot_result = ", rot_result_mat, rot_result_mat.to_euler("XYZ"))
+
+                # transform to bone euler
+                ax_angle, theta = rot.to_quaternion().to_axis_angle()
+                transformed_ax_angle = bone_rot_local.inverted_safe() @ ax_angle
+                rot = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
+
+                # ax_angle, theta = bone_rot_eff.to_quaternion().to_axis_angle()
+                # transformed_ax_angle = bone_rot.inverted_safe() @ ax_angle
+                # rot = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
+
+                # rot = Euler((rz, rx, ry), "XZY")
+                # ax_angle, theta = rot.to_quaternion().to_axis_angle()
+                # if bone.parent is not None:
+                #     parent_bone = bone.parent
+                #     parent_bone_rot = parent_bone.matrix_local.copy()
+                #     parent_bone_rot.translation = Vector((0., 0., 0.))
+                #     transformed_ax_angle = parent_bone_rot @ (bone_rot.inverted_safe() @ ax_angle)
+                # else:
+                #     transformed_ax_angle = bone_rot.inverted_safe() @ ax_angle
+                # rot = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
+                
+                # vs: rotation relative to parent axis, need to convert
+                add_keyframe_point(fcu_rx, frame, rot.x)
+                add_keyframe_point(fcu_ry, frame, rot.y)
+                add_keyframe_point(fcu_rz, frame, rot.z)
+            
+            # vs: rotation relative to parent axis, need to convert
+            # if "rotationX" in data:
+            #     add_keyframe_point(fcu_ry, frame, data["rotationX"] * DEG_TO_RAD)
+            # if "rotationY" in data:
+            #     add_keyframe_point(fcu_rz, frame, data["rotationY"] * DEG_TO_RAD)
+            # if "rotationZ" in data:
+            #     add_keyframe_point(fcu_rx, frame, data["rotationZ"] * DEG_TO_RAD)
     
     # resample animations for blender
     animation_adapter.resample_to_blender()
@@ -750,11 +827,7 @@ def load(context,
 
         # load animations
         for anim in data["animations"]:
-            try:
-                parse_animation(anim, armature, stats)
-            except:
-                print("Failed to parse animation:", anim)
-                pass
+            parse_animation(anim, armature, stats)
     
     # select newly imported objects
     for obj in bpy.context.selected_objects:
