@@ -167,10 +167,11 @@ def clamp_rotation(r):
     return r
 
 
-def get_reduced_rotation(rotation):
-    """Split rotation into all 90 deg rotations
-    and the residual. Return a rotation matrix for all 90 deg rotations
-    or None if not required.
+def decompose_90deg_rotation(rotation):
+    """Remove 90 deg rotations from euler rotation R:
+    R = Rr * R90deg
+    Rr = R * R90deg^-1
+    where Rr is the residual rotation and R90deg are 90 degree rotations
     """
     residual_rotation = rotation.copy()
     
@@ -202,11 +203,15 @@ def get_reduced_rotation(rotation):
         zsteps += rot_z_sign
     
     if xsteps != 0 or ysteps != 0 or zsteps != 0:
-        rotation_90deg = Euler((xsteps * math.pi/2, ysteps * math.pi/2, zsteps * math.pi/2), "XYZ")
+        mat_rotation_90deg = Euler((xsteps * math.pi/2, ysteps * math.pi/2, zsteps * math.pi/2), "XYZ").to_matrix()
     else:
-        rotation_90deg = None
+        mat_rotation_90deg = None
     
-    return residual_rotation, rotation_90deg
+    # rotate euler axis by 90 deg rotations
+    if mat_rotation_90deg is not None:
+        residual_rotation = rotation.to_matrix() @ mat_rotation_90deg.inverted_safe()
+    
+    return residual_rotation, mat_rotation_90deg
 
 
 class TextureInfo():
@@ -464,11 +469,13 @@ def generate_element(
     # apply parent 90 deg rotations
     # ================================
     if parent_rotation_90deg is not None:
+        print(parent_rotation_90deg, v_local)
+        rot_90_deg = np.array(parent_rotation_90deg)
         ax_angle, theta = obj_rotation.to_quaternion().to_axis_angle()
-        transformed_ax_angle = parent_rotation_90deg @ ax_angle
+        transformed_ax_angle = rot_90_deg @ ax_angle
         obj_rotation = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
-        v_local = parent_rotation_90deg @ v_local
-        origin = parent_rotation_90deg @ origin
+        v_local = rot_90_deg @ v_local
+        origin = rot_90_deg @ origin
     
     # ================================
     # constrain rotation to [-90, 90] by applying all further
@@ -477,20 +484,28 @@ def generate_element(
     mat_rotate_90deg = None
 
     if is_bone_child == False: # TODO: temporary due to improper 90 deg rotation with bones
-        residual_rotation, rotation_90deg = get_reduced_rotation(obj_rotation)
-        if rotation_90deg is not None:
-            mat_rotate_90deg = np.array(rotation_90deg.to_matrix())
+        residual_rotation, mat_rotation_90deg = decompose_90deg_rotation(obj_rotation)
+        print(residual_rotation, mat_rotation_90deg)
+        if mat_rotation_90deg is not None:
+            mat_rotate_90deg = np.array(mat_rotation_90deg)
         
             # rotate axis of residual rotation
             # TODO: need to handle with armature, right now messes up rotation
             # relative to bone
             if armature is None:
-                ax_angle, theta = residual_rotation.to_quaternion().to_axis_angle()
-                transformed_ax_angle = mat_rotate_90deg @ ax_angle
-                obj_rotation = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
+                obj_rotation = residual_rotation
 
                 # rotate mesh vertices
                 v_local = mat_rotate_90deg @ v_local
+    # else:
+    #     if bone_hierarchy is not None:
+    #         bone_rotation_90deg = bone_hierarchy[bone.parent].rotation_90deg
+    #         ax_angle, theta = obj_rotation.to_quaternion().to_axis_angle()
+    #         transformed_ax_angle = bone_rotation_90deg @ ax_angle
+    #         obj_rotation = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
+    #         v_local = bone_rotation_90deg @ v_local
+    #         origin = bone_rotation_90deg @ origin
+    
     
     # create output coords, rotation
     # get min/max for to/from points
@@ -694,11 +709,17 @@ def generate_element(
                     face_uvs[2] = uv_max_x
                     face_uvs[3] = uv_min_y
                     face_uv_rotation = COUNTERCLOCKWISE_UV_ROTATION_LOOKUP[uv_loop_start_index][vert_loop_start_index]
-                
+
                 xmin = face_uvs[0] * tex_width
                 ymin = (1.0 - face_uvs[1]) * tex_height
                 xmax = face_uvs[2] * tex_width
                 ymax = (1.0 - face_uvs[3]) * tex_height
+
+                # wtf? down different?
+                if d == "down":
+                    xmin, xmax = xmax, xmin
+                    ymin, ymax = ymax, ymin
+                    
                 faces[d]["uv"] = [ xmin, ymin, xmax, ymax ]
                 
                 if face_uv_rotation != 0 and face_uv_rotation != 360:
@@ -807,9 +828,9 @@ def generate_element(
         new_element["rotationZ"] = rotation[2]
 
     # add collection link
-    collection = obj.users_collection[0]
-    if collection is not None:
-        new_element["group"] = collection.name
+    users_collection = obj.users_collection
+    if len(users_collection) > 0:
+        new_element["group"] = users_collection[0].name
 
     # add faces
     new_element["faces"] = faces
@@ -870,15 +891,11 @@ def generate_attach_point(
     # constrain rotation to [-90, 90] by applying all further
     # 90 deg rotations directly to vertices
     # ================================
-    residual_rotation, rotation_90deg = get_reduced_rotation(obj_rotation)
+    residual_rotation, mat_rotation_90deg = decompose_90deg_rotation(obj_rotation)
 
-    if rotation_90deg is not None:
-        mat_rotate_90deg = np.array(rotation_90deg.to_matrix())
-    
-        # rotate axis of residual rotation
-        ax_angle, theta = residual_rotation.to_quaternion().to_axis_angle()
-        transformed_ax_angle = mat_rotate_90deg @ ax_angle
-        obj_rotation = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
+    if mat_rotation_90deg is not None:
+        mat_rotate_90deg = np.array(mat_rotation_90deg)
+        obj_rotation = residual_rotation
     else:
         mat_rotate_90deg = None
 
@@ -937,14 +954,47 @@ class BoneNode():
     Keep main object in index 0 of children, so can easily get non-main
     children using children[1:]
     """
-    def __init__(self):
-        self.main = None   # main object for this bone
+    def __init__(self, name = ""):
+        self.name = name                 # string name, for debugging
+        self.main = None                 # main object for this bone
+        self.rotation_residual = None     # rotation after removing 90 deg components
+        self.mat_rotation_90deg = None       # rot matrix with all 90 deg rotations
+        self.mat_world_rotation_90deg = None # accumulated 90 deg rotations
+        
         self.children = [] # blender object children associated with this bone
                            # main object should always be index 0
 
+    def __str__(self):
+        return """BoneNode {{ name: {name},
+        main: {main},
+        rotation_residual: {rotation_residual},
+        mat_rotation_90deg: {mat_rotation_90deg},
+        mat_world_rotation_90deg: {mat_world_rotation_90deg},
+        children: {children} }}""".format(
+            name = self.name,
+            main = self.main,
+            rotation_residual = self.rotation_residual,
+            mat_rotation_90deg = self.mat_rotation_90deg,
+            mat_world_rotation_90deg = self.mat_world_rotation_90deg,
+            children = self.children,
+        )
 
-def get_bone_hierarchy(armature):
+
+def get_bone_relative_matrix(bone, parent):
+    """Get bone matrix relative to its parent
+    bone: armature data bone
+    parent: armature data bone
+    """
+    if parent is not None:
+        return parent.matrix_local.inverted_safe() @ bone.matrix_local.copy()
+    else:
+        return bone.matrix_local.copy()
+
+
+def get_bone_hierarchy(armature, root_bones):
     """Create map of armature bone name => BoneNode objects.
+    armature: blender armature object
+    root_bones: array of root bone objects (data bones)
 
     "Main" bone determined by following rule in order:
     1. if a child object has same name as the bone, set as main
@@ -954,7 +1004,7 @@ def get_bone_hierarchy(armature):
     for obj in armature.children:
         if obj.parent_bone != "":
             if obj.parent_bone not in bone_hierarchy:
-                bone_hierarchy[obj.parent_bone] = BoneNode()
+                bone_hierarchy[obj.parent_bone] = BoneNode(name=obj.parent_bone)
             bone_hierarchy[obj.parent_bone].children.append(obj)
     
     for bone_name, node in bone_hierarchy.items():
@@ -966,8 +1016,40 @@ def get_bone_hierarchy(armature):
         # use first object
         if node.main is None:
             node.main = node.children[0]
+
+    # go down bone tree and calculate rotations
+    def get_bone_rotation(hierarchy, bone, parent):
+        if bone.name not in hierarchy:
+            return
+        
+        node = hierarchy[bone.name]
+        
+        # decompose 90 deg rotations out
+        mat_local = get_bone_relative_matrix(bone, bone.parent)
+        _, bone_quat, _ = mat_local.decompose()
+        bone_rot = bone_quat.to_euler("XYZ")
+        
+        node.rotation_residual, node.mat_rotation_90deg = decompose_90deg_rotation(bone_rot)
+
+        if node.mat_rotation_90deg is not None:
+            if parent is not None and parent.name in hierarchy and hierarchy[parent.name].mat_world_rotation_90deg is not None:
+                node.mat_world_rotation_90deg = node.mat_rotation_90deg @ hierarchy[parent.name].mat_world_rotation_90deg
+            else:
+                node.mat_world_rotation_90deg = node.mat_rotation_90deg
+
+        for child in bone.children:
+            get_bone_rotation(hierarchy, child, bone)
     
+    for root_bone in root_bones:
+        print(root_bone)
+        get_bone_rotation(bone_hierarchy, root_bone, None)
+
     return bone_hierarchy
+
+
+def print_bone_hierarchy(hierarchy):
+    for name, bone_node in hierarchy.items():
+        print(name, str(bone_node))
 
 
 def save_all_animations():
@@ -1091,8 +1173,9 @@ def save_objects_by_armature(
     if bone.name in bone_hierarchy:
         # print(bone.name, bone, bone.children, bone_hierarchy[bone.name].main)
 
-        bone_object = bone_hierarchy[bone.name].main
-        bone_children = bone_hierarchy[bone.name].children
+        bone_node = bone_hierarchy[bone.name]
+        bone_object = bone_node.main
+        bone_children = bone_node.children
         mat_world = bone.matrix_local.copy()
 
         # main bone object world transform == bone transform, can simply use 
@@ -1121,6 +1204,9 @@ def save_objects_by_armature(
             else:
                 bone_children = []
         
+        # insert object children of the bone object
+        mat_bone_rot_90deg = bone_node.mat_rotation_90deg if bone_node.mat_rotation_90deg is not None else None
+
         # main object could not be used, insert a dummy object with bone transform
         if bone_element is None:
             if parent_matrix_world is not None:
@@ -1129,15 +1215,18 @@ def save_objects_by_armature(
                 mat_local = mat_world
             bone_loc, quat, _ = mat_local.decompose()
             bone_rot = quat.to_euler("XYZ")
-            bone_element = create_dummy_bone_object(bone.name, bone_loc, bone_rot)
+            if bone.parent is not None:
+                bone_loc = bone_hierarchy[bone.parent.name].mat_rotation_90deg @ bone_loc
+            
+            bone_element = create_dummy_bone_object(bone.name, bone_loc, bone_node.rotation_residual)
         
             cube_origin = bone.head
             rotation_origin = bone.head
         else:
             cube_origin = bone_element["from"]
             rotation_origin = bone_element["rotationOrigin"]
+
         
-        # insert object children of the bone object
         for obj in bone_children:
             obj_element = generate_element(
                 obj,
@@ -1151,6 +1240,7 @@ def save_objects_by_armature(
                 parent_matrix_world=mat_world,
                 parent_cube_origin=cube_origin,
                 parent_rotation_origin=rotation_origin,
+                parent_rotation_90deg=mat_bone_rot_90deg,
                 export_uvs=export_uvs,
                 export_generated_texture=export_generated_texture,
             )
@@ -1265,10 +1355,11 @@ def save_objects(
                     bone.matrix_basis = Matrix.Identity(4)
                 bpy.context.view_layer.update() # force update
                 
-                bone_hierarchy = get_bone_hierarchy(armature)
+                root_bones = filter_root_objects(armature.data.bones)
+                bone_hierarchy = get_bone_hierarchy(armature, root_bones)
+                print_bone_hierarchy(bone_hierarchy)
 
                 # do export using root bone children
-                root_bones = filter_root_objects(armature.data.bones)
                 export_objects = []
                 for bone in root_bones:
                     export_objects.append(bone_hierarchy[bone.name].main)
