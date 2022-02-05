@@ -469,7 +469,7 @@ def generate_element(
     # apply parent 90 deg rotations
     # ================================
     if parent_rotation_90deg is not None:
-        print(parent_rotation_90deg, v_local)
+        # print(parent_rotation_90deg, v_local)
         rot_90_deg = np.array(parent_rotation_90deg)
         ax_angle, theta = obj_rotation.to_quaternion().to_axis_angle()
         transformed_ax_angle = rot_90_deg @ ax_angle
@@ -485,7 +485,7 @@ def generate_element(
 
     if is_bone_child == False: # TODO: temporary due to improper 90 deg rotation with bones
         residual_rotation, mat_rotation_90deg = decompose_90deg_rotation(obj_rotation)
-        print(residual_rotation, mat_rotation_90deg)
+        # print(residual_rotation, mat_rotation_90deg)
         if mat_rotation_90deg is not None:
             mat_rotate_90deg = np.array(mat_rotation_90deg)
         
@@ -1000,13 +1000,16 @@ def get_bone_hierarchy(armature, root_bones):
     1. if a child object has same name as the bone, set as main
     2. else, use first object
     """
+    # insert empty bone nodes for all armature bones
     bone_hierarchy = {}
+    for bone in armature.data.bones:
+        bone_hierarchy[bone.name] = BoneNode(name=bone.name)
+
     for obj in armature.children:
         if obj.parent_bone != "":
-            if obj.parent_bone not in bone_hierarchy:
-                bone_hierarchy[obj.parent_bone] = BoneNode(name=obj.parent_bone)
             bone_hierarchy[obj.parent_bone].children.append(obj)
     
+    # set the "main" object associated with each bone
     for bone_name, node in bone_hierarchy.items():
         for i, obj in enumerate(node.children):
             if obj.name == bone_name:
@@ -1014,7 +1017,7 @@ def get_bone_hierarchy(armature, root_bones):
                 node.children[0], node.children[i] = node.children[i], node.children[0] # swap so main index 0
                 break
         # use first object
-        if node.main is None:
+        if node.main is None and len(node.children) > 0:
             node.main = node.children[0]
 
     # go down bone tree and calculate rotations
@@ -1027,10 +1030,13 @@ def get_bone_hierarchy(armature, root_bones):
         # decompose 90 deg rotations out
         mat_local = get_bone_relative_matrix(bone, bone.parent)
         _, bone_quat, _ = mat_local.decompose()
-        bone_rot = bone_quat.to_euler("XYZ")
-        
-        node.rotation_residual, node.mat_rotation_90deg = decompose_90deg_rotation(bone_rot)
 
+        # bone_rot = bone_quat.to_euler("XYZ")
+        # node.rotation_residual, node.mat_rotation_90deg = decompose_90deg_rotation(bone_rot)
+        
+        node.rotation_residual = bone_quat.to_matrix()
+        node.mat_rotation_90deg = Matrix.Identity(3)
+        
         if node.mat_rotation_90deg is not None:
             if parent is not None and parent.name in hierarchy and hierarchy[parent.name].mat_world_rotation_90deg is not None:
                 node.mat_world_rotation_90deg = node.mat_rotation_90deg @ hierarchy[parent.name].mat_world_rotation_90deg
@@ -1041,15 +1047,17 @@ def get_bone_hierarchy(armature, root_bones):
             get_bone_rotation(hierarchy, child, bone)
     
     for root_bone in root_bones:
-        print(root_bone)
         get_bone_rotation(bone_hierarchy, root_bone, None)
 
     return bone_hierarchy
 
 
 def print_bone_hierarchy(hierarchy):
+    print("===========================================")
+    print("BONE HIERARCHY:")
     for name, bone_node in hierarchy.items():
         print(name, str(bone_node))
+    print("===========================================")
 
 
 def save_all_animations():
@@ -1308,10 +1316,6 @@ def save_objects(
             Requires `minify = True`. Set to -1 to disable.
     - export_animations: Export bones and animation actions.
     """
-    
-    # debug
-    print("ORIGIN SHIFT:", translate_origin)
-    print("")
 
     # output json model stub
     model_json = {
@@ -1357,7 +1361,7 @@ def save_objects(
                 
                 root_bones = filter_root_objects(armature.data.bones)
                 bone_hierarchy = get_bone_hierarchy(armature, root_bones)
-                print_bone_hierarchy(bone_hierarchy)
+                # print_bone_hierarchy(bone_hierarchy)
 
                 # do export using root bone children
                 export_objects = []

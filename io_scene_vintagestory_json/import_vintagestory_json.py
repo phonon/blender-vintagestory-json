@@ -528,22 +528,22 @@ def parse_animation(
                 bone_rot_eff.x += rx
                 bone_rot_eff.y += ry
                 bone_rot_eff.z += rz
-                print(bone.name, "bone_rot_eff", bone_rot_eff, "bone_rot_local", bone_rot_local.to_euler("XYZ"))
+                # print(bone.name, "bone_rot_eff", bone_rot_eff, "bone_rot_local", bone_rot_local.to_euler("XYZ"))
 
                 rot_eff = bone_rot_eff.to_matrix().to_4x4()
                 rot_mat = rot_eff @ bone_rot_local.inverted_safe()
                 rot = rot_mat.to_euler("XYZ")
 
-                rot_result_mat = rot.to_matrix().to_4x4() @ bone_rot_local
-                rot_result = rot_result_mat.to_euler("XYZ")
-
-                if bone.name == "tail":
-                    print(bone.name, "rot_vs:", rot_vs, "rot_vs_original:", rot_vs_original)
-                    print(bone.name, "using direct values:", Euler((rz, rx, ry), "XYZ"), "rot:", rot, "target_rot:", bone_rot_eff)
-                    print(bone.name, "ROT RESULT", rot_result, rot_result.x * animation.RAD_TO_DEG, rot_result.y * animation.RAD_TO_DEG, rot_result.z * animation.RAD_TO_DEG)
-                    print("rot_result * rot_local = ", rot_mat @ bone_rot_local)
-                    print("rot_eff = ", rot_eff, rot_eff.to_euler("XYZ"))
-                    print("rot_result = ", rot_result_mat, rot_result_mat.to_euler("XYZ"))
+                # debugging
+                # rot_result_mat = rot.to_matrix().to_4x4() @ bone_rot_local
+                # rot_result = rot_result_mat.to_euler("XYZ")
+                # if bone.name == "tail":
+                #     print(bone.name, "rot_vs:", rot_vs, "rot_vs_original:", rot_vs_original)
+                #     print(bone.name, "using direct values:", Euler((rz, rx, ry), "XYZ"), "rot:", rot, "target_rot:", bone_rot_eff)
+                #     print(bone.name, "ROT RESULT", rot_result, rot_result.x * animation.RAD_TO_DEG, rot_result.y * animation.RAD_TO_DEG, rot_result.z * animation.RAD_TO_DEG)
+                #     print("rot_result * rot_local = ", rot_mat @ bone_rot_local)
+                #     print("rot_eff = ", rot_eff, rot_eff.to_euler("XYZ"))
+                #     print("rot_result = ", rot_result_mat, rot_result_mat.to_euler("XYZ"))
 
                 # transform to bone euler
                 ax_angle, theta = rot.to_quaternion().to_axis_angle()
