@@ -925,8 +925,8 @@ def create_dummy_bone_object(
     loc = to_y_up(location)
     rot = to_vintagestory_rotation(rotation)
     return {
-        "name": name,
-        "from": loc, 
+        "name": "b_" + name, # append "bone" to animation name so bone does not conflict with main objects
+        "from": loc,
         "to": loc, 
         "rotationOrigin": loc,
         "rotationX": rot[0],
@@ -934,11 +934,11 @@ def create_dummy_bone_object(
         "rotationZ": rot[2],
         "faces": {
             "north": { "texture": "#null", "uv": [ 0.0, 0.0, 0.0, 0.0 ], "enabled": False },
-            "east": { "texture": "#hyena", "uv": [ 0.0, 0.0, 0.0, 0.0 ], "enabled": False },
-            "south": { "texture": "#hyena", "uv": [ 0.0, 0.0, 0.0, 0.0 ], "enabled": False },
-            "west": { "texture": "#hyena", "uv": [ 0.0, 0.0, 0.0, 0.0 ], "enabled": False },
-            "up": { "texture": "#hyena", "uv": [ 0.0, 0.0, 0.0, 0.0 ], "enabled": False },
-            "down": { "texture": "#hyena", "uv": [ 0.0, 0.0, 0.0, 0.0 ], "enabled": False },
+            "east": { "texture": "#null", "uv": [ 0.0, 0.0, 0.0, 0.0 ], "enabled": False },
+            "south": { "texture": "#null", "uv": [ 0.0, 0.0, 0.0, 0.0 ], "enabled": False },
+            "west": { "texture": "#null", "uv": [ 0.0, 0.0, 0.0, 0.0 ], "enabled": False },
+            "up": { "texture": "#null", "uv": [ 0.0, 0.0, 0.0, 0.0 ], "enabled": False },
+            "down": { "texture": "#null", "uv": [ 0.0, 0.0, 0.0, 0.0 ], "enabled": False },
         },
         "children": [],
     }
@@ -955,11 +955,14 @@ class BoneNode():
     children using children[1:]
     """
     def __init__(self, name = ""):
-        self.name = name                 # string name, for debugging
-        self.main = None                 # main object for this bone
-        self.rotation_residual = None     # rotation after removing 90 deg components
+        self.name = name                     # string name, for debugging
+        self.main = None                     # main object for this bone
+        self.rotation_residual = None        # rotation after removing 90 deg components
         self.mat_rotation_90deg = None       # rot matrix with all 90 deg rotations
         self.mat_world_rotation_90deg = None # accumulated 90 deg rotations
+        self.creating_dummy_object = False   # if bone will create a new dummy object in output tree
+                                             # used to decide if output bone name in animation keyframes
+                                             # should be "{bone.name}" or "b_{bone.name}" (using dummy object)
         
         self.children = [] # blender object children associated with this bone
                            # main object should always be index 0
@@ -1060,7 +1063,7 @@ def print_bone_hierarchy(hierarchy):
     print("===========================================")
 
 
-def save_all_animations():
+def save_all_animations(bone_hierarchy):
     """Save all animation actions in Blender file
     """
     animations = []
@@ -1123,12 +1126,12 @@ def save_all_animations():
             animation_adapter.add_fcurve(fcu, data_path, fcu.array_index)
 
         # convert from Blender bone format to Vintage story format
-        keyframes = animation_adapter.create_vintage_story_keyframes()
+        keyframes = animation_adapter.create_vintage_story_keyframes(bone_hierarchy)
 
         # action metadata
         quantity_frames = None
-        on_activity_stopped = "Stop"
-        on_animation_end = "Stop"
+        on_activity_stopped = "EaseOut" # default
+        on_animation_end = "Repeat"     # default
 
         # parse metadata from pose markers
         for marker in action.pose_markers:
@@ -1217,6 +1220,8 @@ def save_objects_by_armature(
 
         # main object could not be used, insert a dummy object with bone transform
         if bone_element is None:
+            bone_hierarchy[bone.name].creating_dummy_object = True
+
             if parent_matrix_world is not None:
                 mat_local = parent_matrix_world.inverted_safe() @ mat_world
             else:
@@ -1536,7 +1541,7 @@ def save_objects(
     # export animations
     # ===========================
     if export_animations:
-        animations = save_all_animations()
+        animations = save_all_animations(bone_hierarchy)
         if len(animations) > 0:
             model_json["animations"] = animations
 

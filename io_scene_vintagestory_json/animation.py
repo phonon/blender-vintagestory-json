@@ -316,7 +316,7 @@ class AnimationAdapter():
         return frames
     
 
-    def create_vintage_story_keyframes(self):
+    def create_vintage_story_keyframes(self, bone_hierarchy):
         """Create list of keyframes for this action in VintageStory format.
         Assume keyframes can have holes (not all x, y, z coords) and can be
         either use euler or quaternion rotation.
@@ -347,6 +347,10 @@ class AnimationAdapter():
                 }
                 ...
             ]
+        
+        `bone_hierarchy` is used to check if a bone inserted a dummy object.
+        If so, name output bone as "b_{bone.name}", with prefix to avoid bone
+        name conflicting with existing objects in scene.
         """
         # map frame # => keyframe data
         keyframes = KeyframeAdapter()
@@ -360,6 +364,12 @@ class AnimationAdapter():
                 fcu_name_rotation = fcu_name_prefix + ".rotation_quaternion"
 
             bone = self.armature.bones[bone_name]
+
+            # get output bone name
+            if bone_hierarchy[bone_name].creating_dummy_object:
+                output_bone_name = "b_" + bone_name
+            else:
+                output_bone_name = bone_name
 
             # TODO: cache these bone rotations
             bone_rot = bone.matrix_local.copy()
@@ -441,7 +451,7 @@ class AnimationAdapter():
                     # rotation_keyframes.append(rot)
                     
                 # handles conversion degrees and y-up
-                keyframes.add_rotation_keyframes(bone_name, frames, rotation_keyframes)
+                keyframes.add_rotation_keyframes(output_bone_name, frames, rotation_keyframes)
 
                 # for converting location keyframes next
                 rotation_matrix_cache = FcurveRotationMatrixCache(
@@ -480,7 +490,7 @@ class AnimationAdapter():
                     location_keyframes.append(loc)
                 
                 # handles conversion to y-up
-                keyframes.add_location_keyframes(bone_name, frames, location_keyframes)
+                keyframes.add_location_keyframes(output_bone_name, frames, location_keyframes)
 
         # convert keyframes map into a list of keyframes
         keyframes_list = keyframes.tolist()
