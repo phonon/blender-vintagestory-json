@@ -885,7 +885,9 @@ def generate_attach_point(
         ax_angle, theta = obj_rotation.to_quaternion().to_axis_angle()
         transformed_ax_angle = parent_rotation_90deg @ ax_angle
         obj_rotation = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
-        origin = parent_rotation_90deg @ origin
+
+        mat_rotation_90deg = np.array(parent_rotation_90deg) # needs to be in numpy format for numpy_matrix @ numpy_array
+        origin = mat_rotation_90deg @ origin
     
     # ================================
     # constrain rotation to [-90, 90] by applying all further
