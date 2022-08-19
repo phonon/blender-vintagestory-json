@@ -387,6 +387,8 @@ def generate_element(
     parent_rotation_90deg=None,    # parent 90 degree rotation matrix
     export_uvs=True,               # export uvs
     export_generated_texture=True,
+    texture_size_x_override=None,  # override texture size x
+    texture_size_y_override=None,  # override texture size y
 ):
     """Recursive function to generate output element from
     Blender object
@@ -595,8 +597,8 @@ def generate_element(
             faces[d]["texture"] = face_texture.path
             model_textures[face_texture.path] = face_texture
 
-            tex_width = face_texture.size[0]
-            tex_height = face_texture.size[1]
+            tex_width = face_texture.size[0] if texture_size_x_override is None else texture_size_x_override
+            tex_height = face_texture.size[1] if texture_size_y_override is None else texture_size_y_override
 
             if export_uvs:
                 # uv loop
@@ -766,6 +768,8 @@ def generate_element(
                 parent_rotation_origin=rotation_origin,
                 parent_rotation_90deg=mat_rotate_90deg,
                 export_uvs=export_uvs,
+                texture_size_x_override=texture_size_x_override,
+                texture_size_y_override=texture_size_y_override,
             )
             if child_element is not None:
                 children.append(child_element)
@@ -805,6 +809,8 @@ def generate_element(
                 parent_rotation_origin=rotation_origin,
                 parent_rotation_90deg=mat_rotate_90deg,
                 export_uvs=export_uvs,
+                texture_size_x_override=texture_size_x_override,
+                texture_size_y_override=texture_size_y_override,
             )
             if child_element is not None:
                 children.append(child_element)
@@ -1177,6 +1183,8 @@ def save_objects_by_armature(
     parent_rotation_origin=np.array([0., 0., 0.]),
     export_uvs=True,               # export uvs
     export_generated_texture=True, # export generated color texture
+    texture_size_x_override=None,  # texture size overrides
+    texture_size_y_override=None,  # texture size overrides
 ):
     """Recursively save object children of a bone to a parent
     bone object
@@ -1211,6 +1219,8 @@ def save_objects_by_armature(
                 parent_rotation_origin=parent_rotation_origin,
                 export_uvs=export_uvs,
                 export_generated_texture=export_generated_texture,
+                texture_size_x_override=texture_size_x_override,
+                texture_size_y_override=texture_size_y_override,
             )
             if len(bone_children) > 1:
                 bone_children = bone_children[1:]
@@ -1258,6 +1268,8 @@ def save_objects_by_armature(
                 parent_rotation_90deg=mat_bone_rot_90deg,
                 export_uvs=export_uvs,
                 export_generated_texture=export_generated_texture,
+                texture_size_x_override=texture_size_x_override,
+                texture_size_y_override=texture_size_y_override,
             )
             if obj_element is not None:
                 bone_element["children"].append(obj_element)
@@ -1276,6 +1288,8 @@ def save_objects_by_armature(
                 parent_rotation_origin=rotation_origin,
                 export_uvs=export_uvs,
                 export_generated_texture=export_generated_texture,
+                texture_size_x_override=texture_size_x_override,
+                texture_size_y_override=texture_size_y_override,
             )
             if child_element is not None:
                 bone_element["children"].append(child_element)
@@ -1289,6 +1303,8 @@ def save_objects(
     translate_origin=None,
     generate_texture=True,
     use_only_exported_object_colors=False,
+    texture_size_x_override=None, # override texture image size x
+    texture_size_y_override=None, # override texture image size y
     texture_folder="",
     color_texture_filename="",
     export_uvs=True,
@@ -1326,8 +1342,9 @@ def save_objects(
 
     # output json model stub
     model_json = {
-        "textureWidth": 16,  # default, will be overridden
-        "textureHeight": 16, # default, will be overridden
+        # default texture sizes, will be overridden
+        "textureWidth": 16 if texture_size_x_override is None else texture_size_x_override,
+        "textureHeight": 16 if texture_size_y_override is None else texture_size_y_override,
         "textures": {},
         "textureSizes": {},
     }
@@ -1394,6 +1411,8 @@ def save_objects(
                 model_colors=model_colors,
                 model_textures=model_textures,
                 export_uvs=export_uvs,
+                texture_size_x_override=texture_size_x_override,
+                texture_size_y_override=texture_size_y_override,
             )
             if element is not None:
                 root_elements.append(element)
@@ -1413,6 +1432,8 @@ def save_objects(
                 parent_cube_origin=np.array([0., 0., 0.]),     # root cube origin 
                 parent_rotation_origin=np.array([0., 0., 0.]), # root rotation origin
                 export_uvs=export_uvs,
+                texture_size_x_override=texture_size_x_override,
+                texture_size_y_override=texture_size_y_override,
             )
             if element is not None:
                 root_elements.append(element)
@@ -1477,7 +1498,11 @@ def save_objects(
         
         texture_refs[texture_path] = "#" + str(texture_id)
         model_json["textures"][str(texture_id)] = posixpath.join(texture_folder, texture_filename)
-        model_json["textureSizes"][str(texture_id)] = texture_info.size
+        
+        tex_size_x = texture_info.size[0] if texture_size_x_override is None else texture_size_x_override
+        tex_size_y = texture_info.size[1] if texture_size_y_override is None else texture_size_y_override
+
+        model_json["textureSizes"][str(texture_id)] = [tex_size_x, tex_size_y]
         texture_id += 1
 
     # ===========================
@@ -1588,6 +1613,14 @@ def save(
         objects = filter_root_objects(bpy.context.selected_objects)
     else:
         objects = filter_root_objects(bpy.context.scene.collection.all_objects[:])
+
+    # remap texture size overrides value 0 => None
+    if "texture_size_x_override" in kwargs:
+        if kwargs["texture_size_x_override"] == 0:
+            kwargs["texture_size_x_override"] = None
+    if "texture_size_y_override" in kwargs:
+        if kwargs["texture_size_y_override"] == 0:
+            kwargs["texture_size_y_override"] = None
 
     save_objects(filepath, objects, **kwargs)
 

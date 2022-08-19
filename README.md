@@ -66,6 +66,8 @@ Export Options
 | Export UVs | True | Exports face UVs |
 | Generate Color Texture | True | Auto-textures solid material colors and generates a `.png` image texture exported alongside model (overwrites UVs). By default will get colors from all materials in the Blender file. |
 | Only Use Exported Object Colors | False | When exporting auto-generated color texture, only use material colors on exported objects (instead of all materials in file). |
+| Texture Size X Override | 0 | Override texture size x in UV export. Sometimes model UV texture size needs to be different than image size (e.g. composing texture skins for seraph). 0 to ignore.
+| Texture Size Y Override | 0 | Override texture size y in UV export. Sometimes model UV texture size needs to be different than image size (e.g. composing texture skins for seraph). 0 to ignore.
 | Minify .json | False | Enable options to reduce .json file size |
 | Decimal Precision | 8 | Number of digits after decimal point in output .json (-1 to disable) |
 | Export Animations | False | Export bone animations (TODO) |

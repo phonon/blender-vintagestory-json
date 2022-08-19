@@ -141,6 +141,20 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
         default="",
     )
 
+    texture_size_x_override: IntProperty(
+        name="Texture Size X Override",
+        description="Override texture size X during UV export",
+        default=0,
+        min=0,
+    )
+
+    texture_size_y_override: IntProperty(
+        name="Texture Size Y Override",
+        description="Override texture size Y during UV export",
+        default=0,
+        min=0,
+    )
+
     export_uvs: BoolProperty(
         name="Export UVs",
         description="Export UVs",
@@ -256,6 +270,8 @@ class VINTAGESTORY_PT_export_textures(bpy.types.Panel):
         layout.prop(operator, "export_uvs")
         layout.prop(operator, "generate_texture")
         layout.prop(operator, "use_only_exported_object_colors")
+        layout.prop(operator, "texture_size_x_override")
+        layout.prop(operator, "texture_size_y_override")
 
 
 # export options panel for minifying .json output

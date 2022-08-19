@@ -141,7 +141,12 @@ class KeyframeAdapter():
         """keyframes: map of frame # => keyframe data
         frame: frame #
         Get keyframe export data dict at a frame, or create new
-        frame data if does not exist
+        frame data if does not exist.
+        NOTE: default keyframe element always adds "rotShortestDistance"
+        In vintagestory api ElementPose, rotShortestDistance will make rotations take
+        shortest path? Can this be an approximation of quaternion slerp within the animation path?
+        (This assumes Blender animation rotation mode is quaternion slerp.)
+        https://github.com/anegostudios/vsapi/blob/master/Common/Model/Animation/ElementPose.cs
         """
         if frame not in self.keyframes:
             self.keyframes[frame] = {
@@ -151,7 +156,10 @@ class KeyframeAdapter():
         
         keyframe = self.keyframes[frame]
         if bone_name not in keyframe["elements"]:
-            keyframe["elements"][bone_name] = {}
+            # create default keyframe element
+            keyframe["elements"][bone_name] = {
+                "rotShortestDistance": True
+            }
 
         return keyframe["elements"][bone_name]
     
@@ -169,12 +177,100 @@ class KeyframeAdapter():
     def add_rotation_keyframes(self, bone_name, frames, rotations):
         """Add rotation keyframes, do conversion to y-up
         """
-        for frame, rot in zip(frames, rotations):
-            keyframe = self.get_bone_keyframe(bone_name, frame)
-            keyframe["rotationX"] = rot.y * RAD_TO_DEG
-            keyframe["rotationY"] = rot.z * RAD_TO_DEG
-            keyframe["rotationZ"] = rot.x * RAD_TO_DEG
+        def get_shortest_angle_deg(start, end):
+            # Subtract the angles, constraining the value to [0, 360)
+            diff = ( end - start ) % 360
 
+            # If we are more than 180 we're taking the long way around.
+            # Let's instead go in the shorter, negative direction
+            if diff > 180 :
+                diff = -(360 - diff)
+            return diff
+            # shortest_angle = ((((end - start) % 360) + 540) % 360) - 180
+            # return shortest_angle
+
+        def find_closer_angle(start, end):
+            """Find a closer angle by adding/subtracting 360 deg"""
+            delta = abs(end - start)
+            delta_p360 = abs((end + 360) - start)
+            delta_n360 = abs((end - 360) - start)
+
+            if delta < delta_p360 and delta < delta_n360:
+                return end
+            elif delta_p360 < delta_n360:
+                return end + 360
+            else:
+                return end - 360
+
+        def get_closer_euler_angle(
+            prev_rx,
+            prev_ry,
+            prev_rz,
+            rx,
+            ry,
+            rz,
+        ):
+            # lets try two candidates:
+            # 1. use shortest angle deltas between prev_r and r
+            delta_rx = get_shortest_angle_deg(prev_rx, rx)
+            delta_ry = get_shortest_angle_deg(prev_ry, ry)
+            delta_rz = get_shortest_angle_deg(prev_rz, rz)
+
+            rx_candidate = prev_rx + delta_rx
+            ry_candidate = prev_ry + delta_ry
+            rz_candidate = prev_rz + delta_rz
+
+            rx_alt = 180 + rx_candidate
+            ry_alt = 180 - ry_candidate
+            rz_alt = 180 + rz_candidate
+
+            if abs(rx_alt - prev_rx) < abs(rx_candidate - prev_rx):
+                return (
+                    find_closer_angle(prev_rx, rx_alt),
+                    find_closer_angle(prev_ry, ry_alt),
+                    find_closer_angle(prev_rz, rz_alt),
+                )
+                # return rx_alt, ry_alt, rz_alt
+            else:
+                return (
+                    find_closer_angle(prev_rx, rx_candidate),
+                    find_closer_angle(prev_ry, ry_candidate),
+                    find_closer_angle(prev_rz, rz_candidate),
+                )
+                # return rx_candidate, ry_candidate, rz_candidate
+
+        prev_rx = None
+        prev_ry = None
+        prev_rz = None
+
+        for frame, rot in zip(frames, rotations):
+            # print("frame", frame)
+            keyframe = self.get_bone_keyframe(bone_name, frame)
+            rx = rot.y * RAD_TO_DEG
+            ry = rot.z * RAD_TO_DEG
+            rz = rot.x * RAD_TO_DEG
+            
+            if prev_rx is not None:
+                rx, ry, rz = get_closer_euler_angle(prev_rx, prev_ry, prev_rz, rx, ry, rz)
+
+            keyframe["rotationX"] = rx
+            keyframe["rotationY"] = ry
+            keyframe["rotationZ"] = rz
+
+            prev_rx = rx
+            prev_ry = ry
+            prev_rz = rz
+
+        # for debugging
+        # if bone_name == "b_root":
+        #     for frame, rot in zip(frames, rotations):
+        #         keyframe = self.get_bone_keyframe(bone_name, frame)
+        #         print("[{}] rx={} ry={} rz={}".format(
+        #             frame,
+        #             keyframe["rotationX"],
+        #             keyframe["rotationY"],
+        #             keyframe["rotationZ"],
+        #         ))
 
 class AnimationAdapter():
     """Helper to create, cache, store/load fcurves and convert
@@ -430,6 +526,9 @@ class AnimationAdapter():
 
                     bone_rot_local_euler = bone_rot_local_euler.to_quaternion().to_euler("XZY")
                     rot_eff_euler = rot_eff_euler.to_quaternion().to_euler("XZY")
+
+                    if bone_name == "root":
+                        print(f"[{frame}] rot_eff_euler = {rot_eff_euler}")
 
                     rx = rot_eff_euler.x - bone_rot_local_euler.x
                     ry = rot_eff_euler.y - bone_rot_local_euler.y
