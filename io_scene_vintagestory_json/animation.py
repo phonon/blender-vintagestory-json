@@ -12,6 +12,15 @@ In blender, bone animations apply as separate rotation matrices
     R = R_animation * R_bone
 
 Exact animation will not be identical.
+
+Note euler rotation orders and axis angle remappings:
+     VS Space    Blender
+        X   <--->   Y
+        Y   <--->   Z
+        Z   <--->   X
+
+Vintage story using ZYX euler order as shown above (v' = Rz * Ry * Rx * v).
+Mapping to Blender space, we must use XZY euler order for all transforms. 
 """
 
 import math
@@ -467,20 +476,13 @@ class AnimationAdapter():
             else:
                 output_bone_name = bone_name
 
-            # TODO: cache these bone rotations
-            bone_rot = bone.matrix_local.copy()
-            bone_rot.translation = Vector((0., 0., 0.))
-            
-            # rotate axis of residual rotation
-            if bone.parent is not None:
-                mat_local = bone.parent.matrix_local.inverted_safe() @ bone.matrix_local
-            else:
-                mat_local = bone.matrix_local.copy()
-            
-            _, bone_rot_quat, _ = mat_local.decompose()
-            bone_rot_local_euler = bone_rot_quat.to_euler("XYZ")
-            bone_rot_local = mat_local.copy()
-            bone_rot_local.translation = Vector((0., 0., 0.))
+            # bone local euler rotation in XZY order (vintagestory euler order)
+            bone_rot_local_euler = bone.matrix.to_euler("XZY")
+
+            # for debugging
+            # print(f"BONE={bone_name} rot={bone_rot_local_euler}")
+            # print(f"bone.matrix_local = {bone.matrix_local}")
+            # print(f"bone.matrix = {bone.matrix}")
 
             # =====================
             # rotation keyframes
@@ -491,6 +493,8 @@ class AnimationAdapter():
 
                 for frame in frames:
                     if rotation_mode == "rotation_euler":
+                        # euler strategy:
+                        # just directly write euler values to output keyframe
                         fcu_w = None
                         fcu_x = self.storage[fcu_name_rotation][0] or DefaultKeyframeSampler(0.0)
                         fcu_y = self.storage[fcu_name_rotation][1] or DefaultKeyframeSampler(0.0)
@@ -499,9 +503,13 @@ class AnimationAdapter():
                             fcu_x.evaluate(frame),
                             fcu_y.evaluate(frame),
                             fcu_z.evaluate(frame),
-                        ), "XYZ").to_quaternion()
-                    
-                    else: # quaternion
+                        ), "XZY")
+                        keyframe_effective_euler = rot_anim
+                        keyframe_effective_euler.rotate(bone_rot_local_euler)
+                    elif rotation_mode == "rotation_quaternion":
+                        # quaternion strategy:
+                        # need to convert quaternion to euler which is intrinsically ill defined
+                        # because eulers are not unique...
                         fcu_w = self.storage[fcu_name_rotation][0] or DefaultKeyframeSampler(1.0)
                         fcu_x = self.storage[fcu_name_rotation][1] or DefaultKeyframeSampler(0.0)
                         fcu_y = self.storage[fcu_name_rotation][2] or DefaultKeyframeSampler(0.0)
@@ -512,43 +520,25 @@ class AnimationAdapter():
                             fcu_y.evaluate(frame),
                             fcu_z.evaluate(frame),
                         ))
+                        # doing it this way seems more stable than below
+                        keyframe_effective_euler = rot_anim.to_euler("XZY")
+                        keyframe_effective_euler.rotate(bone_rot_local_euler)
+                        # OLD WAY: less stable
+                        # keyframe_effective_euler = bone.matrix @ rot_anim.to_matrix()
+                        # keyframe_effective_euler = keyframe_effective_euler.to_euler("XZY")
+                    else:
+                        raise ValueError(f"Unsupported rotation mode: {rotation_mode}")
                     
-                    # transform to bone euler
-                    ax_angle, theta = rot_anim.to_axis_angle()
-                    transformed_ax_angle = bone_rot_local @ ax_angle
-                    rot_anim_local = Quaternion(transformed_ax_angle, theta)
-                    rot_anim_local_mat = rot_anim_local.to_matrix().to_4x4()
-
-                    bone_rot_local = bone_rot_quat.to_euler("XYZ").to_matrix().to_4x4()
-
-                    rot_eff = rot_anim_local_mat @ bone_rot_local
-                    rot_eff_euler = rot_eff.to_euler("XYZ")
-
-                    bone_rot_local_euler = bone_rot_local_euler.to_quaternion().to_euler("XZY")
-                    rot_eff_euler = rot_eff_euler.to_quaternion().to_euler("XZY")
-
-                    if bone_name == "root":
-                        print(f"[{frame}] rot_eff_euler = {rot_eff_euler}")
-
-                    rx = rot_eff_euler.x - bone_rot_local_euler.x
-                    ry = rot_eff_euler.y - bone_rot_local_euler.y
-                    rz = rot_eff_euler.z - bone_rot_local_euler.z
+                    # note vintage story does rotations using:
+                    #   GL11.glRotated(AnimatedElement.rotationX + getRotationX(), 1, 0, 0);
+                    # so our keyframe value is actually the delta between the target effective
+                    # euler angle and the bone's local euler angle, r = r_total - r_local.
+                    rx = keyframe_effective_euler.x - bone_rot_local_euler.x
+                    ry = keyframe_effective_euler.y - bone_rot_local_euler.y
+                    rz = keyframe_effective_euler.z - bone_rot_local_euler.z
                     rot_vs = Euler((rx, ry, rz), "XZY")
                     rotation_keyframes.append(rot_vs)
-
-                    # DEPRECATED:
-                    # ax_angle, theta = rot.to_axis_angle()
-                    # if bone.parent is not None:
-                    #     parent_bone = bone.parent
-                    #     parent_bone_rot = parent_bone.matrix_local.copy()
-                    #     parent_bone_rot.translation = Vector((0., 0., 0.))
-                    #     transformed_ax_angle = parent_bone_rot.inverted_safe() @ ax_angle
-                    # else:
-                    #     transformed_ax_angle = ax_angle
-                    # transformed_ax_angle = bone_rot @ transformed_ax_angle
-                    # rot = Quaternion(transformed_ax_angle, theta).to_euler("XZY") # convert to VS axes
-                    # rotation_keyframes.append(rot)
-                    
+                
                 # handles conversion degrees and y-up
                 keyframes.add_rotation_keyframes(output_bone_name, frames, rotation_keyframes)
 
