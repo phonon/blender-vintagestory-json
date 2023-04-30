@@ -15,7 +15,7 @@ from . import vintagestory_utils
 
 # reload imported modules
 import importlib
-importlib.reload(io_scene_vintagestory_json) 
+importlib.reload(io_scene_vintagestory_json)
 importlib.reload(vintagestory_utils)
 
 def register():

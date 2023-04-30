@@ -330,8 +330,11 @@ def menu_func_export(self, context):
 
 # register
 classes = [
+    # OPERATORS:
+    # main import/export
     ImportVintageStoryJSON,
     ExportVintageStoryJSON,
+    # PANELS:
     VINTAGESTORY_PT_export_geometry,
     VINTAGESTORY_PT_export_textures,
     VINTAGESTORY_PT_export_minify,
