@@ -1,10 +1,12 @@
 import bpy
 import math
+from . import animation
 from . import primitive
 from . import uv
 
 # reload imported modules
 import importlib
+importlib.reload(animation)
 importlib.reload(primitive)
 importlib.reload(uv)
 
@@ -50,7 +52,7 @@ class VINTAGESTORY_PT_panel_uv_tools(bpy.types.Panel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "VintageStory"
-    bl_label = "UV Tools"
+    bl_label = "Texture Tools"
  
     def draw(self, context):
         layout = self.layout
@@ -66,6 +68,12 @@ class VINTAGESTORY_PT_panel_uv_tools(bpy.types.Panel):
             operator="vintagestory.uv_pixel_unwrap",
             icon="UV_DATA",
             text="Pixel UV Unwrap",
+        )
+        # operator: simple bounding box uv pack
+        layout.operator(
+            operator="vintagestory.uv_pack_simple_bounding_box",
+            icon="STICKY_UVS_LOC",
+            text="UV Pack (TODO)",
         )
 
 # =============================================================================
@@ -87,6 +95,13 @@ class VINTAGESTORY_PT_panel_animation_tools(bpy.types.Panel):
 
         layout.label(text="TODO")
 
+        # operator: unwrap selected objects UVs into single pixel
+        layout.operator(
+            operator="vintagestory.assign_bones",
+            icon="BONE_DATA",
+            text="Auto Assign Bones (TODO)",
+        )
+
 def add_submenu(self, context):
     self.layout.separator()
     self.layout.menu(VIEW3D_MT_vintagestory_submenu.bl_idname, icon="MESH_CUBE")
@@ -100,8 +115,10 @@ classes = [
     primitive.OpPrimitiveAddHexadecagon,
     primitive.OpPrimitiveAddHexadecagonHollow,
     primitive.OpPrimitiveAddOctsphere,
+    animation.OpAssignBones,
     uv.OpUVCuboidUnwrap,
     uv.OpUVPixelUnwrap,
+    uv.OpUVPackSimpleBoundingBox,
     # PANELS AND MENUS
     VIEW3D_MT_vintagestory_submenu,
     VINTAGESTORY_PT_panel_uv_tools,

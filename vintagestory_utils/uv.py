@@ -565,3 +565,16 @@ class OpUVPixelUnwrap(bpy.types.Operator):
             bpy.ops.object.mode_set(mode=user_mode)
         
         return {"FINISHED"}
+
+
+class OpUVPackSimpleBoundingBox(bpy.types.Operator):
+    """Simple cuboid uv pack that treats all uv faces in a cuboid mesh as a
+    connected island. Default Blender uv pack needs connected faces as an
+    island, but the cuboid unwraps create disjointed faces."""
+    bl_idname = "vintagestory.uv_pack_simple_bounding_box"
+    bl_label = "Pixel UV Unwrap (VS)"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        self.report({"ERROR"}, "Not implemented")
+        return {"FINISHED"}
