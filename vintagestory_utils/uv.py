@@ -32,6 +32,74 @@ IDX_Z_AXIS = 4
 IDX_Z_NEG_AXIS = 5
 
 
+# transform/projection for cuboid faces along each axis into an XY plane
+# hard-coded based on pre-defined ways for how we should
+# look at each face (which determines projection axes)
+MAT_Y_AX_TO_XY = np.array([ # +Y axis
+    [-1.0, 0.0, 0.0], # x <- -x
+    [0.0, 0.0, 1.0],  # y <- z
+    [0.0, 0.0, 0.0],  # z <- 0
+])
+MAT_Y_NEG_AX_TO_XY = np.array([ # -Y axis
+    [1.0, 0.0, 0.0], # x <- x
+    [0.0, 0.0, 1.0], # y <- z
+    [0.0, 0.0, 0.0], # z <- 0
+])
+MAT_X_AX_TO_XY = np.array([ # -X axis
+    [0.0, 1.0, 0.0], # x <- y
+    [0.0, 0.0, 1.0], # y <- z
+    [0.0, 0.0, 0.0], # z <- 0
+])
+MAT_X_NEG_AX_TO_XY = np.array([ # +X axis
+    [0.0, -1.0, 0.0], # x <- -y
+    [0.0, 0.0, 1.0],  # y <- z
+    [0.0, 0.0, 0.0],  # z <- 0
+])
+# for Z faces, we need to do 90 deg rotations depending on front face
+# for notation, this will be CCW rotations around the Z axis
+# e.g. rotate X axis counterclockwise by angle
+MAT_Z_AX_TO_XY = np.array([ #  +Z axis
+    [1.0, 0.0, 0.0], # x <- x
+    [0.0, 1.0, 0.0], # y <- y
+    [0.0, 0.0, 0.0], # z <- 0
+])
+MAT_Z_AX_ROT90_TO_XY = np.array([ #  +Z axis
+    [0.0, -1.0, 0.0], # x <- -y
+    [1.0, 0.0, 0.0],  # y <- x
+    [0.0, 0.0, 0.0],  # z <- 0
+])
+MAT_Z_AX_ROT180_TO_XY = np.array([ #  +Z axis
+    [-1.0, 0.0, 0.0], # x <- -x
+    [0.0, -1.0, 0.0], # y <- -y
+    [0.0, 0.0, 0.0],  # z <- 0
+])
+MAT_Z_AX_ROT270_TO_XY = np.array([ #  +Z axis
+    [0.0, 1.0, 0.0],  # x <- y
+    [-1.0, 0.0, 0.0], # y <- -x
+    [0.0, 0.0, 0.0],  # z <- 0
+])
+
+MAT_Z_NEG_AX_TO_XY = np.array([ # -Z axis
+    [1.0, 0.0, 0.0],  # x <- x
+    [0.0, -1.0, 0.0], # y <- -y
+    [0.0, 0.0, 0.0],  # z <- 0
+])
+MAT_Z_NEG_AX_ROT90_TO_XY = np.array([ # -Z axis
+    [0.0, 1.0, 0.0], # x <- y
+    [1.0, 0.0, 0.0], # y <- x
+    [0.0, 0.0, 0.0], # z <- 0
+])
+MAT_Z_NEG_AX_ROT180_TO_XY = np.array([ # -Z axis
+    [-1.0, 0.0, 0.0], # x <- -x
+    [0.0, 1.0, 0.0],  # y <- y
+    [0.0, 0.0, 0.0],  # z <- 0
+])
+MAT_Z_NEG_AX_ROT270_TO_XY = np.array([ # -Z axis
+    [0.0, -1.0, 0.0], # x <- y
+    [-1.0, 0.0, 0.0], # y <- x
+    [0.0, 0.0, 0.0],  # z <- 0
+])
+
 def loop_is_clockwise(coords):
     """Detect if loop of 2d coordinates is clockwise or counterclockwise.
     Inputs:
@@ -164,22 +232,30 @@ class OpUVCuboidUnwrap(bpy.types.Operator):
 
     front_face: bpy.props.EnumProperty(
         items=[ # (identifier, name, description)
-            ("-y", "-Y", "Front face is -y"),
-            ("+y", "+Y", "Front face is +y"),
-            ("-x", "-X", "Front face is -x"),
-            ("+x", "+X", "Front face is +x"),
-            ("-z", "-Z", "Front face is -z"),
-            ("+z", "+Z", "Front face is +z"),
+            ("-y", "-Y", "Front face is -Y"),
+            ("+y", "+Y", "Front face is +Y"),
+            ("-x", "-X", "Front face is -X"),
+            ("+x", "+X", "Front face is +X"),
+            ("+z,-x", "+Z (-X Up)", "Front face is +Z (-X Up)"),
+            ("-z,+x", "-Z (+X Up)", "Front face is -Z (+X Up)"),
+            ("+z,+y", "+Z (+Y Up)", "Front face is +Z (+Y Up)"),
+            ("-z,-y", "-Z (-Y Up)", "Front face is -Z (-Y Up)"),
         ],
         default="-y",
         name="Front Face",
         description="Front face of cuboid for unwraping",
     )
 
-    use_local_space: bpy.props.BoolProperty(
+    use_local_normals: bpy.props.BoolProperty(
         default=False,
-        name="Use Local Space",
-        description="Use local space vertices instead of world space",
+        name="Use Local Space Normals",
+        description="Use local space normals instead of world space normals",
+    )
+
+    scale_to_unit: bpy.props.BoolProperty(
+        default=False,
+        name="Scale to [0, 1]",
+        description="Scale UVs to fit into [0, 1] square",
     )
 
     def execute(self, context):
@@ -187,23 +263,155 @@ class OpUVCuboidUnwrap(bpy.types.Operator):
 
         # unpack args
 
-        # use local vertices/normals instead of world normals
-        use_local_space = args.get("use_local_space", False)
+        # use local normals to find front face instead of world normals
+        # BUG TODO: does not handle face rotations properly, e.g. up/down faces
+        # are rotated the wrong way, need to adjust their rotations
+        use_local_space_normals = args.get("use_local_normals", False)
+
+        # scale uv to unit square [0, 1]
+        scale_to_unit = args.get("scale_to_unit", False)
 
         # map `front_face` string arg to integer axis index
         front_face = args.get("front_face", "-y")
         if front_face == "+x":
-            front_axis_index, front_axis = IDX_X_AXIS, X_AXIS
+            front_axis = X_AXIS
+            mat_front_face_to_xy = MAT_X_AX_TO_XY
+            mat_back_face_to_xy = MAT_X_NEG_AX_TO_XY
+            mat_left_face_to_xy = MAT_Y_NEG_AX_TO_XY
+            mat_right_face_to_xy = MAT_Y_AX_TO_XY
+            mat_up_face_to_xy = MAT_Z_AX_ROT270_TO_XY
+            mat_down_face_to_xy = MAT_Z_NEG_AX_ROT90_TO_XY
         elif front_face == "-x":
-            front_axis_index, front_axis = IDX_X_NEG_AXIS, X_NEG_AXIS
+            front_axis = X_NEG_AXIS
+            mat_front_face_to_xy = MAT_X_NEG_AX_TO_XY
+            mat_back_face_to_xy = MAT_X_AX_TO_XY
+            mat_left_face_to_xy = MAT_Y_AX_TO_XY
+            mat_right_face_to_xy = MAT_Y_NEG_AX_TO_XY
+            mat_up_face_to_xy = MAT_Z_AX_ROT90_TO_XY
+            mat_down_face_to_xy = MAT_Z_NEG_AX_ROT270_TO_XY
         elif front_face == "+y":
-            front_axis_index, front_axis = IDX_Y_AXIS, Y_AXIS
+            front_axis = Y_AXIS
+            mat_front_face_to_xy = MAT_Y_AX_TO_XY
+            mat_back_face_to_xy = MAT_Y_NEG_AX_TO_XY
+            mat_left_face_to_xy = MAT_X_AX_TO_XY
+            mat_right_face_to_xy = MAT_X_NEG_AX_TO_XY
+            mat_up_face_to_xy = MAT_Z_AX_ROT180_TO_XY
+            mat_down_face_to_xy = MAT_Z_NEG_AX_ROT180_TO_XY
         elif front_face == "-y":
-            front_axis_index, front_axis = IDX_Y_NEG_AXIS, Y_NEG_AXIS
-        elif front_face == "+z":
-            front_axis_index, front_axis = IDX_Z_AXIS, Z_AXIS
-        elif front_face == "-z":
-            front_axis_index, front_axis = IDX_Z_NEG_AXIS, Z_NEG_AXIS
+            front_axis = Y_NEG_AXIS
+            mat_front_face_to_xy = MAT_Y_NEG_AX_TO_XY
+            mat_back_face_to_xy = MAT_Y_AX_TO_XY
+            mat_left_face_to_xy = MAT_X_NEG_AX_TO_XY
+            mat_right_face_to_xy = MAT_X_AX_TO_XY
+            mat_up_face_to_xy = MAT_Z_AX_TO_XY
+            mat_down_face_to_xy = MAT_Z_NEG_AX_TO_XY
+        # z-axis are different: depends on if we want aligned to y- or x-axis,
+        # matrices here are hard-coded since the rotations do not follow an
+        # easy pattern for re-use
+        elif front_face == "+z,-x":
+            front_axis = Z_AXIS
+            mat_front_face_to_xy = MAT_Z_AX_ROT270_TO_XY
+            mat_back_face_to_xy = MAT_Z_NEG_AX_ROT270_TO_XY
+            mat_left_face_to_xy = np.array([
+                [0.0, 0.0, 1.0], # x <- z
+                [-1.0, 0.0, 0.0], # y <- -x
+                [0.0, 0.0, 0.0], # z <- 0
+            ])
+            mat_right_face_to_xy = np.array([
+                [0.0, 0.0, -1.0], # x <- -z
+                [-1.0, 0.0, 0.0], # y <- -x
+                [0.0, 0.0, 0.0], # z <- 0
+            ])
+            mat_up_face_to_xy = np.array([
+                [0.0, 1.0, 0.0], # x <- y
+                [0.0, 0.0, -1.0], # y <- -z
+                [0.0, 0.0, 0.0], # z <- 0
+            ])
+            mat_down_face_to_xy = np.array([
+                [0.0, 1.0, 0.0], # x <- y
+                [0.0, 0.0, 1.0], # y <- z
+                [0.0, 0.0, 0.0], # z <- 0
+            ])
+        elif front_face == "-z,+x":
+            front_axis = Z_NEG_AXIS
+            mat_front_face_to_xy = MAT_Z_NEG_AX_ROT90_TO_XY
+            mat_back_face_to_xy = MAT_Z_AX_ROT90_TO_XY
+            mat_left_face_to_xy = np.array([
+                [0.0, 0.0, -1.0], # x <- -z
+                [1.0, 0.0, 0.0], # y <- x
+                [0.0, 0.0, 0.0], # z <- 0
+            ])
+            mat_right_face_to_xy = np.array([
+                [0.0, 0.0, 1.0], # x <- z
+                [1.0, 0.0, 0.0], # y <- x
+                [0.0, 0.0, 0.0], # z <- 0
+            ])
+            mat_up_face_to_xy = np.array([
+                [0.0, 1.0, 0.0], # x <- y
+                [0.0, 0.0, 1.0], # y <- z
+                [0.0, 0.0, 0.0], # z <- 0
+            ])
+            mat_down_face_to_xy = np.array([
+                [0.0, 1.0, 0.0], # x <- y
+                [0.0, 0.0, -1.0], # y <- -z
+                [0.0, 0.0, 0.0], # z <- 0
+            ])
+        elif front_face == "+z,+y":
+            front_axis = Z_AXIS
+            mat_front_face_to_xy = MAT_Z_AX_TO_XY
+            mat_back_face_to_xy = MAT_Z_NEG_AX_ROT180_TO_XY
+            mat_left_face_to_xy = np.array([
+                [0.0, 0.0, 1.0], # x <- z
+                [0.0, 1.0, 0.0], # y <- y
+                [0.0, 0.0, 0.0], # z <- 0
+            ])
+            mat_right_face_to_xy = np.array([
+                [0.0, 0.0, -1.0], # x <- -z
+                [0.0, 1.0, 0.0], # y <- y
+                [0.0, 0.0, 0.0], # z <- 0
+            ])
+            mat_up_face_to_xy = np.array([
+                [1.0, 0.0, 0.0], # x <- x
+                [0.0, 0.0, -1.0], # y <- -z
+                [0.0, 0.0, 0.0], # z <- 0
+            ])
+            mat_down_face_to_xy = np.array([
+                [1.0, 0.0, 0.0], # x <- x
+                [0.0, 0.0, 1.0], # y <- z
+                [0.0, 0.0, 0.0], # z <- 0
+            ])
+        elif front_face == "-z,-y":
+            front_axis = Z_NEG_AXIS
+            mat_front_face_to_xy = np.array([ #  -Z axis
+                [1.0, 0.0, 0.0], # x <- x
+                [0.0, -1.0, 0.0], # y <- -y
+                [0.0, 0.0, 0.0], # z <- 0
+            ])
+            mat_back_face_to_xy = np.array([ #  +Z axis
+                [1.0, 0.0, 0.0], # x <- x
+                [0.0, 1.0, 0.0], # y <- y
+                [0.0, 0.0, 0.0], # z <- 0
+            ])
+            mat_left_face_to_xy = np.array([
+                [0.0, 0.0, -1.0], # x <- -z
+                [0.0, -1.0, 0.0], # y <- -y
+                [0.0, 0.0, 0.0],  # z <- 0
+            ])
+            mat_right_face_to_xy = np.array([
+                [0.0, 0.0, 1.0],  # x <- z
+                [0.0, -1.0, 0.0], # y <- -y
+                [0.0, 0.0, 0.0],  # z <- 0
+            ])
+            mat_up_face_to_xy = np.array([
+                [1.0, 0.0, 0.0], # x <- x
+                [0.0, 0.0, 1.0], # y <- z
+                [0.0, 0.0, 0.0], # z <- 0
+            ])
+            mat_down_face_to_xy = np.array([
+                [1.0, 0.0, 0.0],  # x <- x
+                [0.0, 0.0, -1.0], # y <- -z
+                [0.0, 0.0, 0.0],  # z <- 0
+            ])
         else:
             err_msg = f"Invalid front_face: {front_face}, must be one of: +x, -x, +y, -y, +z, -z"
             self.report({"ERROR"}, err_msg)
@@ -245,25 +453,19 @@ class OpUVCuboidUnwrap(bpy.types.Operator):
                 
                 # transform vertices to world space
                 matrix_world = np.asarray(obj.matrix_world)
-                if use_local_space:
-                    vertices = vertices_local
-                else: # use world space vertices, transform vertices to world space
-                    vertices = matrix_world @ vertices_local
+                vertices = matrix_world @ vertices_local
 
-                # normal matrix = tranpose of inverse of upper left 3x3 of world matrix
-                try:
-                    normal_matrix = np.transpose(np.linalg.inv(matrix_world[0:3,0:3]))
-                except:
-                    log.warning(f"Non-invertible matrix for: {obj.name}, using its world matrix instead")
-                    normal_matrix = matrix_world
+                if use_local_space_normals: # just use identity
+                    normal_matrix = np.identity(3)
+                else:
+                    # normal matrix = tranpose of inverse of upper left 3x3 of world matrix
+                    try:
+                        normal_matrix = np.transpose(np.linalg.inv(matrix_world[0:3,0:3]))
+                    except:
+                        log.warning(f"Non-invertible matrix for: {obj.name}, using its world matrix instead")
+                        normal_matrix = matrix_world
                 
-                # Z-axis for cross product
-                front_axis = Y_NEG_AXIS
-
-                # First find the "front face" by finding the face normal that
-                # is closest matching to the front face normal
-                
-                # gather original "mesh" face vertices and normals
+                # gather original mesh face vertices and normals
                 mesh_face_uv_loop_start = np.zeros((6,), dtype=int)   # (face,)
                 mesh_face_vert_indices = np.zeros((6, 4), dtype=int)  # (face, vert)
                 mesh_face_vertices = np.zeros((6, 4, 4), dtype=float) # (face, vert, xyzw)
@@ -284,6 +486,9 @@ class OpUVCuboidUnwrap(bpy.types.Operator):
                 mesh_face_normals_world = normal_matrix @ mesh_face_normals.transpose()
                 mesh_face_normals_world = mesh_face_normals_world.transpose()
 
+                # First find the "front face" by finding the face normal that
+                # is closest matching to the front face normal
+                
                 # determine index of closest matching mesh front face: 
                 # detect world space face normal closest to
                 # axis-aligned front face normal
@@ -315,40 +520,6 @@ class OpUVCuboidUnwrap(bpy.types.Operator):
                 # - f0, f1, f2, f3 are face local indices in values {0, 1, 2, 3}
                 # - v0, v1, v2, v3 are corresponding global mesh vertex indices
                 #   these are pointers into the mesh.vertices
-
-                # transform/projection the front face into an XY plane
-                # hard-coded based on pre-defined ways for how we should
-                # look at each face (which determines projection axes)
-                mat_front_face_to_xy = np.array([
-                    [1.0, 0.0, 0.0], # x <- x
-                    [0.0, 0.0, 1.0], # y <- z
-                    [0.0, 0.0, 0.0], # z <- 0
-                ])
-                mat_back_face_to_xy = np.array([
-                    [-1.0, 0.0, 0.0], # x <- -x
-                    [0.0, 0.0, 1.0],  # y <- z
-                    [0.0, 0.0, 0.0],  # z <- 0
-                ])
-                mat_left_face_to_xy = np.array([
-                    [0.0, -1.0, 0.0], # x <- -y
-                    [0.0, 0.0, 1.0],  # y <- z
-                    [0.0, 0.0, 0.0],  # z <- 0
-                ])
-                mat_right_face_to_xy = np.array([
-                    [0.0, 1.0, 0.0], # x <- y
-                    [0.0, 0.0, 1.0], # y <- z
-                    [0.0, 0.0, 0.0], # z <- 0
-                ])
-                mat_up_face_to_xy = np.array([
-                    [1.0, 0.0, 0.0], # x <- x
-                    [0.0, 1.0, 0.0], # y <- y
-                    [0.0, 0.0, 0.0], # z <- 0
-                ])
-                mat_down_face_to_xy = np.array([
-                    [-1.0, 0.0, 0.0], # x <- -x
-                    [0.0, 1.0, 0.0],  # y <- y
-                    [0.0, 0.0, 0.0],  # z <- 0
-                ])
                 
                 # map face vertices indices to standard v0, v1, v2, v3 format
                 # 1. transform front face coords into an XY plane
@@ -499,12 +670,16 @@ class OpUVCuboidUnwrap(bpy.types.Operator):
                 uv_xy = uv_offset[:,np.newaxis,:] + face_uv_xy
                 
                 # finally, scale the entire uv map to fit into the (0, 1) square
-                uv_scale = 1.0 / uv_xy.max(axis=(0, 1, 2))
-                uv_xy_normalized = uv_scale * uv_xy
+                if scale_to_unit:
+                    uv_scale = 1.0 / uv_xy.max(axis=(0, 1, 2))
+                    uv_xy_normalized = uv_scale * uv_xy
 
-                uv_x = uv_xy_normalized[:,:,0]
-                uv_y = uv_xy_normalized[:,:,1]
-
+                    uv_x = uv_xy_normalized[:,:,0]
+                    uv_y = uv_xy_normalized[:,:,1]
+                else:
+                    uv_x = uv_xy[:,:,0]
+                    uv_y = uv_xy[:,:,1]
+                
                 # update face uvs
                 for i in range(0, 6):
                     idx = face_uv_loop_start[i]
