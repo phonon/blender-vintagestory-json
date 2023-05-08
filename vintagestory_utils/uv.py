@@ -468,8 +468,8 @@ class OpUVCuboidUnwrap(bpy.types.Operator):
                 # gather original mesh face vertices and normals
                 mesh_face_uv_loop_start = np.zeros((6,), dtype=int)   # (face,)
                 mesh_face_vert_indices = np.zeros((6, 4), dtype=int)  # (face, vert)
-                mesh_face_vertices = np.zeros((6, 4, 4), dtype=float) # (face, vert, xyzw)
-                mesh_face_normals = np.zeros((6, 3), dtype=float)     # (face, xyz)
+                mesh_face_vertices = np.zeros((6, 4, 4), dtype=np.float64) # (face, vert, xyzw)
+                mesh_face_normals = np.zeros((6, 3), dtype=np.float64)     # (face, xyz)
 
                 for i, face in enumerate(mesh.polygons):
                     mesh_face_uv_loop_start[i] = face.loop_start
@@ -745,11 +745,323 @@ class OpUVPixelUnwrap(bpy.types.Operator):
 class OpUVPackSimpleBoundingBox(bpy.types.Operator):
     """Simple cuboid uv pack that treats all uv faces in a cuboid mesh as a
     connected island. Default Blender uv pack needs connected faces as an
-    island, but the cuboid unwraps create disjointed faces."""
+    island, but the cuboid unwraps create disjointed faces.
+
+    Using simple heuristic packing from Igarshi and Cosgrove 2001.
+    https://www-ui.is.s.u-tokyo.ac.jp/~takeo/papers/i3dg2001.pdf
+    """
     bl_idname = "vintagestory.uv_pack_simple_bounding_box"
-    bl_label = "Pixel UV Unwrap (VS)"
+    bl_label = "Simple UV Pack"
     bl_options = {"REGISTER", "UNDO"}
 
+    stand_up_islands: bpy.props.BoolProperty(
+        default=False,
+        name="Stand up UV islands",
+        description="Rotates UV islands to stand up on the longest edge",
+    )
+
+    scale_to_unit: bpy.props.BoolProperty(
+        default=True,
+        name="Scale to [0, 1]",
+        description="Scale packed UVs to fit into [0, 1] square",
+    )
+
+    round_to_pixels: bpy.props.BoolProperty(
+        default=True,
+        name="Round to pixels",
+        description="Rounds UV vertices to closest pixel (based on texture size input)",
+    )
+
+    pad_pixels: bpy.props.IntProperty(
+        default=1,
+        name="Padding Pixels",
+        description="Padding between UV islands in pixels relative to texture size",
+        min=0,
+    )
+
+    padding_default_texture_size: bpy.props.IntProperty(
+        default=128,
+        name="Texture Size",
+        description="Texture size to use for padding calculation if no texture is set",
+        min=1,
+    )
+
+    len_margin: bpy.props.FloatProperty(
+        default=1.2,
+        name="UV Strip Length Margin",
+        description="Adjusts how many UV islands fit into each row",
+        min=0.0,
+    )
+
     def execute(self, context):
-        self.report({"ERROR"}, "Not implemented")
+        args = self.as_keywords()
+
+        # unpack args
+        stand_up_islands = args.get("stand_up_islands", False)
+        scale_to_unit = args.get("scale_to_unit", True)
+        round_to_pixels = args.get("round_to_pixels", True)
+        pad_pixels = args.get("pad_pixels", 1)
+        tex_size = args.get("padding_default_texture_size", 256)
+        len_margin = args.get("len_margin", 1.2)
+
+        # need to be in object mode to access context selected objects
+        user_mode = context.active_object.mode
+        if user_mode != "OBJECT":
+            need_to_switch_mode_back = True
+            bpy.ops.object.mode_set(mode="OBJECT")
+        else:
+            need_to_switch_mode_back = False
+        
+        # only perform on selected objects
+        all_objects = bpy.context.selected_objects
+        
+        # pre-filter objects to only include cuboid meshes
+        cuboids = []
+        for obj in all_objects:
+            mesh = obj.data
+            if not isinstance(mesh, bpy.types.Mesh):
+                continue
+            if len(mesh.polygons) != 6:
+                continue
+            cuboids.append(obj)
+        
+        num_cuboids = len(cuboids)
+        if num_cuboids == 0: # skip if no cuboids
+            return {"FINISHED"}
+
+        # uvs for each object in shape: (num_objects, faces, vertices, xy)
+        uvs = np.zeros((num_cuboids, 6, 4, 2), dtype=np.float64)
+        # uv aabb for each object in shape: (num_objects, min/max, xy)
+        uvs_aabb = np.zeros((num_cuboids, 2, 2), dtype=np.float64)
+
+        for i, obj in enumerate(cuboids):
+            mesh = obj.data
+            if not isinstance(mesh, bpy.types.Mesh):
+                continue
+            
+            uv_layer = mesh.uv_layers.active.data
+
+            # gather uv faces and determine uv 2d aabb
+            for f, face in enumerate(mesh.polygons):
+                loop_start = face.loop_start
+                uvs[i,f,0,:] = uv_layer[loop_start].uv
+                uvs[i,f,1,:] = uv_layer[loop_start+1].uv
+                uvs[i,f,2,:] = uv_layer[loop_start+2].uv
+                uvs[i,f,3,:] = uv_layer[loop_start+3].uv
+
+                # aabb
+                uvs_aabb[i,0,:] = np.min(uvs[i,:,:,:], axis=(0, 1))
+                uvs_aabb[i,1,:] = np.max(uvs[i,:,:,:], axis=(0, 1))
+
+        # rotate each mesh uv islands by 90 deg to stand up on longest edge
+        # (e.g. if width > height, TODO: option to stand up on width or height) 
+        if stand_up_islands:
+            # TODO
+            pass
+
+        # get widths dx and heights dy of uv island aabbs
+        uv_width = uvs_aabb[:,1,0] - uvs_aabb[:,0,0]
+        uv_height = uvs_aabb[:,1,1] - uvs_aabb[:,0,1]
+
+        # print(f"uvs: {uvs}")
+        # print(f"uvs_aabb: {uvs_aabb}")
+        # print(f"uv_width: {uv_width}")
+        # print(f"uv_height: {uv_height}")
+
+        # uv areas
+        uv_area = uv_width * uv_height
+
+        # calculate total area of all uvs
+        uv_total_area = np.sum(uv_area)
+        # estimate square length needed to pack uvs as sqrt(total_area) * margin
+        # where margin > 1.0 (TODO: make it a parameter)
+        uv_total_area_sqrt = np.sqrt(uv_total_area)
+        uv_pack_side_len = len_margin * uv_total_area_sqrt
+
+        # sort islands by height (from tallest to shortest)
+        indices_sorted = np.argsort(uv_height)[::-1]
+
+        # iterate through height-sorted islands and split uvs into strips of
+        # width up to uv_pack_side_len
+        strips = []        # list of lists of uv indices
+        strip_dy = []      # list of strip height offsets dy
+        strip_heights = [] # list of strip height
+        strip_widths = []  # list of strip width
+        strip_island_width_offsets = [] # list of each strip's island offset (correspond to strip uv indices)
+
+        curr_strip_dy = 0.0
+        curr_strip_width = 0.0
+        curr_strip_indices = []
+        island_width_offsets = []
+        for i in indices_sorted:
+            island_width_offsets.append(curr_strip_width)
+            curr_strip_width += uv_width[i]
+            curr_strip_indices.append(i)
+
+            if curr_strip_width >= uv_pack_side_len:
+                # strip reached max width, start a new strip
+                curr_height = uv_height[curr_strip_indices[0]] # first uv in strip is tallest
+                strips.append(curr_strip_indices)
+                strip_dy.append(curr_strip_dy)
+                strip_heights.append(curr_height)
+                strip_widths.append(curr_strip_width)
+                strip_island_width_offsets.append(island_width_offsets)
+                curr_strip_width = 0.0
+                curr_strip_dy += curr_height
+                curr_strip_indices = []
+                island_width_offsets = []
+
+        # append last strip (if not already captured by strip_width >= uv_pack_side_len)
+        if len(curr_strip_indices) > 0:
+            strips.append(curr_strip_indices)
+            strip_dy.append(curr_strip_dy)
+            strip_heights.append(uv_height[curr_strip_indices[0]])
+            strip_widths.append(curr_strip_width)
+            strip_island_width_offsets.append(island_width_offsets)
+        
+        # print(f"strips: {strips}")
+        # print(f"strip_dy: {strip_dy}")
+        # print(f"strip_heights: {strip_heights}")
+        # print(f"strip_widths: {strip_widths}")
+        # print(f"strip_island_width_offsets: {strip_island_width_offsets}")
+
+        uvs_packed = np.zeros_like(uvs)
+        for strip_indices, dy, island_width_offsets in zip(strips, strip_dy, strip_island_width_offsets):
+            for i, dx in zip(strip_indices, island_width_offsets):
+                # packed = original - aabb_min + [dx, dy]
+                # dy = strip's height offset
+                # dx = offset position within strip
+                uvs_packed[i,:,:,:] = uvs[i,:,:,:] - uvs_aabb[i,0,:] + [dx, dy]
+        
+        # Apply paddings after layout:
+        # (Note if there are large differences in number of islands per
+        # strip, this will cause large differences in amount of applied
+        # padding to each strip.)
+        # 
+        #     P      PP      P
+        #     ____________________________
+        #  P |  ____    ____              |
+        #    | |    |  |    |             |
+        #    | |____|  |____|             |
+        #  P |                            |
+        #  P |P ______ PP ____ PP ____ P  |
+        #    | |      |  |    |  |    |   |
+        #    | |______|  |____|  |____|   |
+        #  P |                            |
+        #  P |  ______    ______    ____  |
+        #    | |      |  |      |  |    | |
+        #    | |______|  |______|  |____| |
+        #  P |____________________________|
+        #     P        PP        PP      P
+        #
+        # Inject padding between each island...however we do padding in
+        # terms of pixels. But UV space defined from [0,1], so first we need
+        # to correspond uv space to pixel space based on the total uv bounds.
+        #
+        # Determine how much constant padding to apply such that when we finally
+        # divide by uv scaling, the pad sizing is equal to padding in pixels desired.
+        #
+        # Define all scales such that: x * scale = tex_size
+        # 
+        # After padding, the vertical and horizontal total uv lengths are
+        # (note we have to consider padding each horizontal strip separately
+        # due to different number of islands per horizontal strip):
+        #      Y = tex_size / scale_by_y  = 2 * pad * num_strips + sum(strip_heights)
+        #     X0 = tex_size / scale_by_x0 = 2 * pad * num_islands_0 + strip_width_0
+        #     X1 = tex_size / scale_by_x1 = 2 * pad * num_islands_1 + strip_width_1
+        #        ...
+        #     Xn = tex_size / scale_by_xn = 2 * pad * num_islands_n + strip_width_n
+        #
+        # foreach equation Y, X0, X1, ... XN
+        #     pad_pixels = pad * scale_by_y
+        #     pad_pixels = pad * scale_by_x0
+        #     pad_pixels = pad * scale_by_x1
+        #       ...
+        #     pad_pixels = pad * scale_by_xn
+        #
+        # 2 equations, 2 unknowns (pad, scale_by_y), solve for pad, e.g. for Y:
+        #     scale_by_y = pad_pixels / pad
+        #     scale_by_y * tex_size  = tex_size * pad / pad_pixels = 2 * pad * num_strips + sum(strip_heights)
+        #     pad = sum(strip_heights) / (tex_size / pad_pixels - 2 * num_strips)
+        # 
+        # Solve for each `scale_by_[ ]` value, then we will use the largest
+        # scaling needed to scale entire uv map to fit into the (0, 1) square.
+        # Final padding size in local space determined from scale:
+        #     scale = max(scale_by_y, scale_by_x0, scale_by_x1, ..., scale_by_xn)
+        #     pad = pad_pixels * scale
+
+        # calculate y and scale_by_y after padding:
+        if pad_pixels > 0:
+            num_strips = len(strips)
+            pad_candidates = np.zeros(1 + num_strips) # first for y vertical dir, rest for x strips
+            scale_candidates = np.zeros_like(pad_candidates)
+            
+            pad_y = np.sum(strip_heights) / (float(tex_size) / float(pad_pixels) - 2.0 * num_strips)
+            scale_by_y = float(pad_pixels) / pad_y
+
+            pad_candidates[0] = pad_y
+            scale_candidates[0] = scale_by_y
+
+            # calculate each strip x and scale_by_x after padding:
+            for i, (strip_indices, strip_width) in enumerate(zip(strips, strip_widths)):
+                num_islands = len(strip_indices)
+                pad_x = strip_width / (float(tex_size) / float(pad_pixels) - 2.0 * num_islands)
+                scale_by_x = float(pad_pixels) / pad_x
+                pad_candidates[i+1] = pad_x
+                scale_candidates[i+1] = scale_by_x
+            
+            # print(f"pad_candidates: {pad_candidates}")
+            # print(f"scale_candidates: {scale_candidates}")
+
+            # find largest scale factor
+            idx_scale = np.argmin(scale_candidates)
+            global_uv_scale = scale_candidates[idx_scale]
+        else:
+            global_uv_max_x = np.max(uvs_packed[:,:,:,0])
+            global_uv_max_y = np.max(uvs_packed[:,:,:,1])
+            global_uv_scale = float(tex_size) / np.max([global_uv_max_x, global_uv_max_y])
+            # print(f"global_uv_max_x: {global_uv_max_x}")
+            # print(f"global_uv_max_y: {global_uv_max_y}")
+            # print(f"global_uv_scale: {global_uv_scale}")
+
+        # first scale UVs to target square tex_size: (tex_size, tex_size)
+        uvs_packed *= global_uv_scale
+
+        # round to nearest pixel
+        # does not always do clean rounding: to do clean rounding
+        # need to do this together with uv unwrap width/height calculations
+        if round_to_pixels:
+            uvs_packed = uvs_packed.round(decimals=0)
+        
+        # apply padding in terms of pixels
+        dy = 0
+        for strip_indices in strips:
+            dy += pad_pixels
+            dx = 0
+            for i in strip_indices:
+                dx += pad_pixels
+                uvs_packed[i,:,:,:] = uvs_packed[i,:,:,:] + [dx, dy]
+                dx += pad_pixels
+            dy += pad_pixels
+
+        # finally scale down from `tex_size` to (0, 1) square
+        if scale_to_unit:
+            uvs_packed /= float(tex_size)
+
+        # apply uvs to each object
+        for i, obj in enumerate(cuboids):
+            mesh = obj.data
+            uv_layer = mesh.uv_layers.active.data
+
+            # apply packed uvs to faces
+            for f, face in enumerate(mesh.polygons):
+                loop_start = face.loop_start
+                uv_layer[loop_start].uv = uvs_packed[i,f,0,:]
+                uv_layer[loop_start+1].uv = uvs_packed[i,f,1,:]
+                uv_layer[loop_start+2].uv = uvs_packed[i,f,2,:]
+                uv_layer[loop_start+3].uv = uvs_packed[i,f,3,:]
+
+        if need_to_switch_mode_back:
+            bpy.ops.object.mode_set(mode=user_mode)
+        
         return {"FINISHED"}

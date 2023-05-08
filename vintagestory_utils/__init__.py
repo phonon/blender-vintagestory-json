@@ -73,7 +73,7 @@ class VINTAGESTORY_PT_panel_uv_tools(bpy.types.Panel):
         layout.operator(
             operator="vintagestory.uv_pack_simple_bounding_box",
             icon="STICKY_UVS_LOC",
-            text="UV Pack (TODO)",
+            text="UV Pack",
         )
 
 # =============================================================================
