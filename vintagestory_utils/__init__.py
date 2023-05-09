@@ -93,13 +93,11 @@ class VINTAGESTORY_PT_panel_animation_tools(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
 
-        layout.label(text="TODO")
-
         # operator: unwrap selected objects UVs into single pixel
         layout.operator(
             operator="vintagestory.assign_bones",
             icon="BONE_DATA",
-            text="Auto Assign Bones (TODO)",
+            text="Auto Assign Bones",
         )
 
 def add_submenu(self, context):
