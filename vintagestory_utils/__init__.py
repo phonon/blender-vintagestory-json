@@ -1,5 +1,4 @@
 import bpy
-import math
 from . import animation
 from . import primitive
 from . import uv

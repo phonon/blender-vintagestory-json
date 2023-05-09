@@ -1,6 +1,4 @@
-import math
 import numpy as np
-import logging
 import bpy
 from mathutils import Matrix
 
