@@ -92,12 +92,20 @@ class VINTAGESTORY_PT_panel_animation_tools(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
 
+        # operator: make selected armature bones rotation mode XZY (default VS mode)
+        layout.operator(
+            operator="vintagestory.make_bones_xzy",
+            icon="GROUP_BONE",
+            text="Make Bones XZY",
+        )
+
         # operator: unwrap selected objects UVs into single pixel
         layout.operator(
             operator="vintagestory.assign_bones",
             icon="BONE_DATA",
             text="Auto Assign Bones",
         )
+
 
 def add_submenu(self, context):
     self.layout.separator()
@@ -112,6 +120,7 @@ classes = [
     primitive.OpPrimitiveAddHexadecagon,
     primitive.OpPrimitiveAddHexadecagonHollow,
     primitive.OpPrimitiveAddOctsphere,
+    animation.OpMakeBonesXZY,
     animation.OpAssignBones,
     uv.OpUVCuboidUnwrap,
     uv.OpUVPixelUnwrap,

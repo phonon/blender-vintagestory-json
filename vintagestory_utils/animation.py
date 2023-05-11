@@ -2,8 +2,49 @@ import numpy as np
 import bpy
 from mathutils import Matrix
 
+class OpMakeBonesXZY(bpy.types.Operator):
+    """Make bone rotation mode XZY (corresponds to VintageStory rotation order)"""
+    bl_idname = "vintagestory.make_bones_xzy"
+    bl_label = "Make Bones XZY"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+
+        # need to be in object mode to access context selected objects
+        user_mode = context.active_object.mode
+        if user_mode != "OBJECT":
+            need_to_switch_mode_back = True
+            bpy.ops.object.mode_set(mode="OBJECT")
+        else:
+            need_to_switch_mode_back = False
+
+        num_updated = 0
+
+        for obj in bpy.context.selected_objects:
+            if not isinstance(obj.data, bpy.types.Armature):
+                continue
+            
+            armature = obj
+            bones = armature.pose.bones
+            for b in bones:
+                b.rotation_mode = "XZY"
+            
+            num_updated += 1
+                
+        if need_to_switch_mode_back:
+            bpy.ops.object.mode_set(mode=user_mode)
+        
+        # if no armature, note error for user
+        if num_updated > 0:
+            self.report({"INFO"}, f"Updated {num_updated} armatures bones to XZY")
+        else:
+            self.report({"ERROR"}, "No armature in selection")
+
+        return {"FINISHED"}
+
+
 class OpAssignBones(bpy.types.Operator):
-    """Automatically assign meshes to closest bone as an object bone type."""
+    """Automatically assign meshes to closest bone as an object bone type"""
     bl_idname = "vintagestory.assign_bones"
     bl_label = "Assign Bones"
     bl_options = {"REGISTER", "UNDO"}
