@@ -742,6 +742,209 @@ class OpUVPixelUnwrap(bpy.types.Operator):
         return {"FINISHED"}
 
 
+def round_cuboid_uv_island_to_pixels(
+    uvs, # (faces, vertices, xy)
+):
+    """Round uv islands to closest pixel (integer) corners.
+    Strategy assumes uv islands are already axis-aligned unwraps for
+    cuboids, looking like
+
+             __________ __________
+            |    UP    |  DOWN    |
+            |   (+z)   |  (-z)    |
+     _______|__________|__________|_______
+    | LEFT  |  FRONT   | RIGHT |  BACK    |
+    | (-x)  |  (-y)    | (+x)  |  (+y)    |
+    |_______|__________|_______|__________|
+
+    We want to round face width/height so that faces that should have
+    matching widths/heights (e.g. left/right or front/back) remain 
+    consistent. Simple rounding does not guarantee this.
+
+    1. Find (x_min, y_min) and offset uvs min to origin (0,0)
+    
+    2. First round x values on the x-axis:
+        At high level, idea is to go from left-to-right "stretching" each
+        face's x values to the closest x-integer. But each time we stretch
+        a face, we need to also stretch everything to the right. In this way
+        we are rounding face widths instead of just points.
+         _______ ___________ ______
+        |       |           |      |
+        |       |           |      |
+        |_______|___________|______|
+        0----1----2----3----4----5----6----7----> x
+                ^
+                Stretch these points to x=2
+                and update all faces to the right as well
+
+         _______ ___________ ______
+        |       | |         | |    | |
+        |       |>|         |>|    |>|
+        |_______|_|_________|_|____| |
+        0----1----2----3----4----5----6----7----> x
+                ^
+         _________ ___________ ______
+        |         |           |      |
+        |         |           |      |
+        |_________|___________|______|
+        0----1----2----3----4----5----6----7----> x
+                             ^       ^
+                            These edges were also "stretched"
+        
+         _________ __________ _______
+        |         |         | |    | |
+        |         |         |<|    |<|
+        |_________|_________|_|____|_|
+        0----1----2----3----4----5----6----7----> x
+                             ^ 
+                            Now we want to stretch this next face to x=4
+                            and stretch everything to the right back
+         _________ _________ ______
+        |         |         |      |
+        |         |         |      |
+        |_________|_________|______|
+        0----1----2----3----4----5----6----7----> x
+
+         _________ _________ ______
+        |         |         |    | |
+        |         |         |    |<|
+        |_________|_________|____|_|
+        0----1----2----3----4----5----6----7----> x
+
+         _________ _________ ____
+        |         |         |    |
+        |         |         |    |
+        |_________|_________|____|
+        0----1----2----3----4----5----6----7----> x
+
+        Issue: how to deal with faces coords not associated to same face:
+            y2  __________________
+               |                  |
+            y1 |__________________|________
+               |           |               |
+            y0 |___________|_______________|
+               ^           ^      ^       ^
+            {y0,y1,y2}  {y0,y1}  {y1,y2} {y0,y1}
+        
+            Tag each vertex bin with rounded y values. This creates rules:
+            - A bin's parent has y tags either subset or superset of
+              current bin y-value tags
+            - Child bins has y-tags either subset or superset of current
+              bin y-value tags.
+            This is a hacky way to estimate "parent-child" relationships
+            without a full graph, based on the format of our cuboid uv islands.
+
+        Exact method:
+        1. Get all vertices with x values rounded to closest integer xround:
+        2. Bin together vertex indices by their xround values, e.g. in island above
+         points:        x       x       x    
+                    x   x       x    x  x    x
+                    x   x       x    x       x
+                   -|---|-------|----|--|----|-----> x value (integers)
+            bins:   0   4       12   17 20   25
+           These bin integers are from rounding x value to closest x integer.
+           We see bin 0 has 2 vertices, bin 4 has 3 vertices, etc. 
+        3. Sort bins by xround value
+        4. for each bin from 2nd bin, n=1, to end we find distance of each bin
+           relative to "parent" bin (this is the "face width")
+                parent bin = previous bin whose y value are subset of current bin
+                             or are superset of current bin
+                dx = x_bin(n) - x_bin(n-1)
+                width_rounded = round(dx)
+           Round all vertices in this bin and shift next bin vertices by dx:
+                for point in x_bin(n):
+                    point_x = x_bin(n-1) + width_rounded
+                for point in bins n+1, n+2, ...:
+                    if bin(n+1) y values are subset or superset of bin(n)
+                        point_x += dx
+
+    3. Second round y values on the y-axis:
+       (Repeat same strategy above along y-axis)
+       
+    4. Re-translate back: find closest integer (x0, y0) to (x_min, y_min)
+       and translate all uv vertices back by that distance.
+
+    Returns new integer rounded uvs.
+    """
+    from collections import defaultdict
+    
+    num_faces = uvs.shape[0]
+    num_vertices = uvs.shape[1]
+
+    xmin_ymin = np.min(uvs, axis=(0, 1,))
+
+    # translate uvs to origin
+    uvs0 = uvs - xmin_ymin
+
+    # rounded x, y to nearest integers (used for vertex binning below)
+    uvs0_round_nearest = np.round(uvs0)
+
+    def round_along_axis(ax, ax_ytags):
+        """Round vertex values along an xy axis index ax in {0, 1}.
+        Written in terms of x, but works for y as well.
+        This modifies original uvs0_rounded array.
+        """
+        # bin vertices by rounded x values
+        x_bins = defaultdict(list)
+        bin_ytags = defaultdict(set)
+        for f in range(num_faces):
+            for v in range(num_vertices):
+                x = int(uvs0_round_nearest[f, v, ax])
+                x_bins[x].append((f, v, ax)) # uv vertex index
+                bin_ytags[x].add(int(uvs0_round_nearest[f, v, ax_ytags]))
+        
+        x_sorted = sorted(x_bins)
+        x_bins_sorted = [ x_bins[x] for x in x_sorted ]
+        bin_ytags_sorted = [ bin_ytags[x] for x in x_sorted ]
+        
+        n_bins = len(x_bins_sorted)
+        for i in range(1, n_bins):
+            # find parent bin index
+            p_parent = None
+            for j in range(i-1, -1, -1):
+                if bin_ytags_sorted[j].issubset(bin_ytags_sorted[i]) or \
+                   bin_ytags_sorted[j].issuperset(bin_ytags_sorted[i]):
+                    p_parent = x_bins_sorted[i-1][0]
+                    break
+
+            if p_parent is None: # could not find parent??
+                print(f"`round_along_axis` could not find parent bin for bin {i}, defaulting to previous bin")
+                p_parent = x_bins_sorted[i-1][0]
+
+            # un-rounded dist from this to previous bin
+            # assume all un-rounded x values in each bin are same
+            p_curr = x_bins_sorted[i][0]
+            x_parent = uvs0[p_parent]
+            x_curr = uvs0[p_curr]
+            dist = x_curr - x_parent
+
+            # round the dist to closest int
+            dist_rounded = np.round(dist)
+            x_rounded = x_parent + dist_rounded
+            
+            # distance to offset to get to rounded values
+            dx = x_rounded - x_curr
+
+            # for all these current vertices, force values to val_rounded
+            for p in x_bins_sorted[i]:
+                uvs0[p] = x_rounded
+            # for all further x vertices (to the right) offset by dx
+            for j in range(i+1, n_bins):
+                if bin_ytags_sorted[j].issubset(bin_ytags_sorted[i]) or \
+                   bin_ytags_sorted[j].issuperset(bin_ytags_sorted[i]):
+                    for p in x_bins_sorted[j]:
+                        uvs0[p] += dx
+
+    round_along_axis(ax=0, ax_ytags=1)
+    round_along_axis(ax=1, ax_ytags=0)
+
+    # translate back: round xmin, ymin to closest integer
+    # also do final rounding to clean up any numerical arithmetic errors
+    x0_y0 = np.round(xmin_ymin)
+    uvs_rounded = np.round(uvs0 + x0_y0)
+    return uvs_rounded
+    
+
 class OpUVPackSimpleBoundingBox(bpy.types.Operator):
     """Simple cuboid uv pack that treats all uv faces in a cuboid mesh as a
     connected island. Default Blender uv pack needs connected faces as an
@@ -772,6 +975,16 @@ class OpUVPackSimpleBoundingBox(bpy.types.Operator):
         description="Rounds UV vertices to closest pixel (based on texture size input)",
     )
 
+    round_to_pixel_method: bpy.props.EnumProperty(
+        items=[ # (identifier, name, description)
+            ("closest", "Closest", "Round to closest pixel"),
+            ("width_height", "Face Width/Height", "Round face width/heights (keeps consistent faces)"),
+        ],
+        default="width_height",
+        name="Round to Pixel Method",
+        description="Method to round UV vertices to closest pixel",
+    )
+
     pad_pixels: bpy.props.IntProperty(
         default=1,
         name="Padding Pixels",
@@ -800,6 +1013,7 @@ class OpUVPackSimpleBoundingBox(bpy.types.Operator):
         stand_up_islands = args.get("stand_up_islands", False)
         scale_to_unit = args.get("scale_to_unit", True)
         round_to_pixels = args.get("round_to_pixels", True)
+        round_to_pixel_method = args.get("round_to_pixel_method", "width_height")
         pad_pixels = args.get("pad_pixels", 1)
         tex_size = args.get("padding_default_texture_size", 256)
         len_margin = args.get("len_margin", 1.2)
@@ -1031,18 +1245,25 @@ class OpUVPackSimpleBoundingBox(bpy.types.Operator):
         # does not always do clean rounding: to do clean rounding
         # need to do this together with uv unwrap width/height calculations
         if round_to_pixels:
-            uvs_packed = uvs_packed.round(decimals=0)
+            if round_to_pixel_method == "closest":
+                uvs_packed = uvs_packed.round(decimals=0)
+            elif round_to_pixel_method == "width_height":
+                for i in range(uvs_packed.shape[0]):
+                    uvs_packed[i,:,:,:] = round_cuboid_uv_island_to_pixels(uvs_packed[i,:,:,:])
+            else:
+                raise ValueError(f"Unknown round_to_pixel_method: {round_to_pixel_method}")
         
         # apply padding in terms of pixels
-        dy = 0
-        for strip_indices in strips:
-            dy += pad_pixels
-            dx = 0
-            for i in strip_indices:
-                dx += pad_pixels
-                uvs_packed[i,:,:,:] = uvs_packed[i,:,:,:] + [dx, dy]
-                dx += pad_pixels
-            dy += pad_pixels
+        if pad_pixels > 0:
+            dy = 0
+            for strip_indices in strips:
+                dy += pad_pixels
+                dx = 0
+                for i in strip_indices:
+                    dx += pad_pixels
+                    uvs_packed[i,:,:,:] = uvs_packed[i,:,:,:] + [dx, dy]
+                    dx += pad_pixels
+                dy += pad_pixels
 
         # finally scale down from `tex_size` to (0, 1) square
         if scale_to_unit:
