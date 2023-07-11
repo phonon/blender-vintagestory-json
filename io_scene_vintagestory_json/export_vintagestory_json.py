@@ -1411,6 +1411,7 @@ def save_objects(
                 model_colors=model_colors,
                 model_textures=model_textures,
                 export_uvs=export_uvs,
+                export_generated_texture=generate_texture,
                 texture_size_x_override=texture_size_x_override,
                 texture_size_y_override=texture_size_y_override,
             )
@@ -1432,6 +1433,7 @@ def save_objects(
                 parent_cube_origin=np.array([0., 0., 0.]),     # root cube origin 
                 parent_rotation_origin=np.array([0., 0., 0.]), # root rotation origin
                 export_uvs=export_uvs,
+                export_generated_texture=generate_texture,
                 texture_size_x_override=texture_size_x_override,
                 texture_size_y_override=texture_size_y_override,
             )
@@ -1473,12 +1475,15 @@ def save_objects(
         # write texture info to output model
         model_json["textureSizes"]["0"] = [tex_size, tex_size]
         model_json["textures"]["0"] = texture_model_path
-    
-    # if not generating texture, just write texture path to json file
-    # TODO: scan materials for textures, then update output size
-    elif color_texture_filename != "":
-        model_json["textureSizes"]["0"] = [16, 16]
-        model_json["textures"]["0"] = posixpath.join(texture_folder, color_texture_filename)
+    else:
+        color_tex_uv_map = None
+        default_color_uv = None
+        
+        # if not generating texture, just write texture path to json file
+        # TODO: scan materials for textures, then update output size
+        if color_texture_filename != "":
+            model_json["textureSizes"]["0"] = [16, 16]
+            model_json["textures"]["0"] = posixpath.join(texture_folder, color_texture_filename)
     
     # ===========================
     # process face texture paths
@@ -1530,7 +1535,7 @@ def save_objects(
 
         faces = element["faces"]
         for d, f in faces.items():
-            if isinstance(f, tuple):
+            if isinstance(f, tuple) and color_tex_uv_map is not None:
                 color_uv = color_tex_uv_map[f] if f in color_tex_uv_map else default_color_uv
                 faces[d] = {
                     "uv": color_uv,
