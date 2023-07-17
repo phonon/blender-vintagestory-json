@@ -438,6 +438,7 @@ def parse_animation(
 
     name = e["code"] # use code as name instead of name field
     action = bpy.data.actions.new(name=name)
+    action.use_fake_user = True # prevents deletion on file save
 
     # flag to repeat animation (insert duplicate keyframe at end)
     repeat_animation = False
