@@ -104,6 +104,12 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
         default=False,
     )
 
+    skip_disabled_render: BoolProperty(
+        name="Skip Disabled Render",
+        description="Skip objects with disabled render",
+        default=True,
+    )
+
     # applies default shift from vintagestory origin
     translate_origin: BoolProperty(
         name="Translate Origin",
@@ -193,6 +199,12 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
 
     # ================================
     # animation options EXPERIMENTAL
+    export_armature: BoolProperty(
+        name="Export Armature",
+        description="Export by main armature tree",
+        default=True,
+    )
+
     export_animations: BoolProperty(
         name="Export Animations",
         description="Export bone animations keyframes",
@@ -238,6 +250,7 @@ class VINTAGESTORY_PT_export_geometry(bpy.types.Panel):
         operator = sfile.active_operator
 
         layout.prop(operator, "selection_only")
+        layout.prop(operator, "skip_disabled_render")
         layout.prop(operator, "translate_origin")
         layout.prop(operator, "translate_origin_x")
         layout.prop(operator, "translate_origin_y")
@@ -319,6 +332,7 @@ class VINTAGESTORY_PT_export_animation(bpy.types.Panel):
         sfile = context.space_data
         operator = sfile.active_operator
 
+        layout.prop(operator, "export_armature")
         layout.prop(operator, "export_animations")
 
 # add io to menu

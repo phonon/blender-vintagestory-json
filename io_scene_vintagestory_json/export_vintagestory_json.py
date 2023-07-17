@@ -76,8 +76,7 @@ ROTATION_MODE_TO_FCURVE_PROPERTY = {
 }
 
 def filter_root_objects(objects):
-    """Get root objects (objects without parents) in
-    Blender scene"""
+    """Get root objects (objects without parents) in scene."""
     root_objects = []
     for obj in objects:
         if obj.parent is None:
@@ -374,6 +373,7 @@ def create_color_texture(
 
 def generate_element(
     obj,                           # current object
+    skip_disabled_render=True,     # skip children with disabled render 
     parent=None,                   # parent Blender object
     armature=None,                 # Blender Armature object (NOT Armature data)
     bone_hierarchy=None,           # map of armature bones => children mesh objects
@@ -742,6 +742,9 @@ def generate_element(
     
     # parse direct children objects normally
     for child in obj.children:
+        if skip_disabled_render and child.hide_render:
+            continue
+
         # attach point empty marker
         if child.type == "EMPTY":
             attachpoint_element = generate_attach_point(
@@ -757,6 +760,7 @@ def generate_element(
         else: # assume normal mesh
             child_element = generate_element(
                 child,
+                skip_disabled_render=skip_disabled_render,
                 parent=obj,
                 armature=None,
                 bone_hierarchy=None,
@@ -796,8 +800,12 @@ def generate_element(
                         bone_obj_children.append(bone_hierarchy[child_bone_name].main)
     
         for child in bone_obj_children:
+            if skip_disabled_render and child.hide_render:
+                continue
+            
             child_element = generate_element(
                 child,
+                skip_disabled_render=skip_disabled_render,
                 parent=obj,
                 armature=armature,
                 bone_hierarchy=bone_hierarchy,
@@ -1174,6 +1182,7 @@ def save_all_animations(bone_hierarchy):
 def save_objects_by_armature(
     bone,
     bone_hierarchy,
+    skip_disabled_render=True,
     armature=None,
     groups=None,
     model_colors=None,
@@ -1208,6 +1217,7 @@ def save_objects_by_armature(
             # print("MATRIX EQUAL")
             bone_element = generate_element(
                 bone_object,
+                skip_disabled_render=skip_disabled_render,
                 parent=None,
                 armature=None,
                 bone_hierarchy=None,
@@ -1253,8 +1263,12 @@ def save_objects_by_armature(
 
         
         for obj in bone_children:
+            if skip_disabled_render and obj.hide_render:
+                continue
+
             obj_element = generate_element(
                 obj,
+                skip_disabled_render=skip_disabled_render,
                 parent=None,
                 armature=None,
                 bone_hierarchy=None,
@@ -1279,6 +1293,7 @@ def save_objects_by_armature(
             child_element = save_objects_by_armature(
                 child_bone,
                 bone_hierarchy,
+                skip_disabled_render=skip_disabled_render,
                 armature=armature,
                 groups=groups,
                 model_colors=model_colors,
@@ -1300,6 +1315,7 @@ def save_objects_by_armature(
 def save_objects(
     filepath,
     objects,
+    skip_disabled_render=True,
     translate_origin=None,
     generate_texture=True,
     use_only_exported_object_colors=False,
@@ -1319,25 +1335,39 @@ def save_objects(
     Will save .json file to output path.
 
     Inputs:
-    - filepath: Output file path name.
-    - object: Iterable collection of Blender objects
-    - recenter_origin: Recenter model so that its center is at specified translate_origin
-    - translate_origin: New origin to shift, None for no shift, [x, y, z] list in Blender coords
-                        to apply shift
-    - generate_texture: Generate texture from solid material colors. By default, creates
-            a color texture from all materials in file (so all groups of
-            objects can share the same texture file).
+    - filepath:
+        Output file path name.
+    - object:
+        Iterable collection of Blender objects
+    - skip_disabled_render:
+        Skip objects with disable render (hide_render) flag
+    - translate_origin:
+        New origin to shift, None for no shift, [x, y, z] list in Blender
+        coords to apply shift
+    - generate_texture:
+        Generate texture from solid material colors. By default, creates
+        a color texture from all materials in file (so all groups of objects
+        can share the same texture file).
     - use_only_exported_object_colors:
-            Generate texture colors from only exported objects instead of default using
-            all file materials.
-    - texture_folder: Output texture subpath, for typical "item/texture_name" the
-            texture folder would be "item".
-    - color_texture_filename: Name of exported color texture file.
-    - export_uvs: Export object uvs.
-    - minify: Minimize output file size (write into single line, remove spaces, ...)
-    - decimal_precision: Number of digits after decimal to keep in numbers.
-            Requires `minify = True`. Set to -1 to disable.
-    - export_animations: Export bones and animation actions.
+        Generate texture colors from only exported objects instead of default
+        using all file materials.
+    - texture_folder:
+        Output texture subpath, for typical "item/texture_name" the texture
+        folder would be "item".
+    - color_texture_filename:
+        Name of exported color texture file.
+    - export_uvs:
+        Export object uvs.
+    - minify:
+        Minimize output file size (write into single line, remove spaces, ...)
+    - decimal_precision:
+        Number of digits after decimal to keep in numbers. Requires
+        `minify = True`. Set to -1 to disable.
+    - export_armature:
+        Export by bones, makes custom hierarchy based on bone tree and
+        attaches generated elements to their bone parent.
+    - export_animations:
+        Export bones and animation actions.
     """
 
     # output json model stub
@@ -1375,6 +1405,9 @@ def save_objects(
 
     if export_armature:
         for obj in objects:
+            if skip_disabled_render and obj.hide_render:
+                continue
+
             if isinstance(obj.data, bpy.types.Armature):
                 armature = obj
                 
@@ -1406,6 +1439,7 @@ def save_objects(
             element = save_objects_by_armature(
                 root_bone,
                 bone_hierarchy,
+                skip_disabled_render=skip_disabled_render,
                 armature=armature,
                 groups=groups,
                 model_colors=model_colors,
@@ -1422,8 +1456,12 @@ def save_objects(
         # normal export geometry tree
         # ===================================
         for obj in export_objects:
+            if skip_disabled_render and obj.hide_render:
+                continue
+
             element = generate_element(
                 obj,
+                skip_disabled_render=skip_disabled_render,
                 parent=None,
                 armature=armature,
                 bone_hierarchy=bone_hierarchy,
