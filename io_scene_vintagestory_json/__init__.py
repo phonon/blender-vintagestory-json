@@ -88,6 +88,11 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
     """Exports scene cuboids as VintageStory .json object"""
     bl_idname = "vintagestory.export_json"
     bl_label = "Export as VintageStory .json"
+    
+    # operator initialized flag
+    initialized: BoolProperty(
+        default=False,
+    )
 
     # ExportHelper mixin class uses this
     filename_ext = ".json"
@@ -211,6 +216,24 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
         default=True,
     )
 
+    # ================================
+    # run post-export python script
+
+    # get stored property from scene
+    # TODO: should we just store all export properties into scene?
+
+    run_post_export_script: BoolProperty(
+        name="Run Post Export Script",
+        description="Run post export python script",
+        default=False,
+    )
+
+    post_export_script: StringProperty(
+        name="Post Export Script",
+        description="Name of post export python script (in .blend file folder)",
+        default="",
+    )
+
     def execute(self, context):
         args = self.as_keywords()
         if args["translate_origin"] == True:
@@ -222,10 +245,44 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
         else:
             args["translate_origin"] = None
         
-        return export_vintagestory_json.save(context, **args)
-    
+        # store run post export script properties to scene
+        bpy.context.scene["vintagestory_run_post_export_script"] = self.run_post_export_script
+        bpy.context.scene["vintagestory_post_export_script"] = self.post_export_script
+
+        result = export_vintagestory_json.save(context, **args)
+
+        if self.run_post_export_script:
+            import os
+            import subprocess
+            savefilename= self.filepath
+            savefolder = os.path.dirname(savefilename)
+            script = os.path.join(savefolder, self.post_export_script)
+            if self.post_export_script != "" and os.path.exists(script) and os.path.isfile(script):
+                print(f"Running post export script: {script}")
+                subprocess.run(["python", script, savefilename], shell=False)
+            else:
+                self.report({"WARNING"}, f"Post export script not found: {self.post_export_script}")
+            
+        return result
+
     def draw(self, context):
-        pass
+        if not self.initialized:
+            self.initialized = True
+
+            # first draw: load saved export properties from scene
+            
+            if "vintagestory_run_post_export_script" in bpy.context.scene:
+                prop_run_post_export_script = bpy.context.scene["vintagestory_run_post_export_script"]
+            else:
+                prop_run_post_export_script = False
+            
+            if "vintagestory_post_export_script" in bpy.context.scene:
+                prop_post_export_script = bpy.context.scene["vintagestory_post_export_script"]
+            else:
+                prop_post_export_script = ""
+            
+            self.run_post_export_script = prop_run_post_export_script
+            self.post_export_script = prop_post_export_script
 
 
 # export options panel for geometry
@@ -335,6 +392,31 @@ class VINTAGESTORY_PT_export_animation(bpy.types.Panel):
         layout.prop(operator, "export_armature")
         layout.prop(operator, "export_animations")
 
+
+class VINTAGESTORY_PT_export_scripts(bpy.types.Panel):
+    """Export panel for post export script."""
+    bl_space_type = "FILE_BROWSER"
+    bl_region_type = "TOOL_PROPS"
+    bl_label = "Export Python Script"
+    bl_parent_id = "FILE_PT_operator"
+
+    @classmethod
+    def poll(cls, context):
+        sfile = context.space_data
+        operator = sfile.active_operator
+        return operator.bl_idname == "VINTAGESTORY_OT_export_json"
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False  # No animation.
+
+        sfile = context.space_data
+        operator = sfile.active_operator
+
+        layout.prop(operator, "run_post_export_script")
+        layout.prop(operator, "post_export_script")
+
 # add io to menu
 def menu_func_import(self, context):
     self.layout.operator(ImportVintageStoryJSON.bl_idname, text="VintageStory (.json)")
@@ -353,6 +435,7 @@ classes = [
     VINTAGESTORY_PT_export_textures,
     VINTAGESTORY_PT_export_minify,
     VINTAGESTORY_PT_export_animation,
+    VINTAGESTORY_PT_export_scripts,
 ]
 
 def register():
