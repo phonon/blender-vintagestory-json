@@ -41,7 +41,7 @@ class ImportVintageStoryJSON(Operator, ImportHelper):
     )
 
     # applies default shift from vintagestory origin
-    translate_origin: BoolProperty(
+    do_translate_origin: BoolProperty(
         name="Translate Origin",
         description="Translate model origin after import",
         default=True,
@@ -72,7 +72,7 @@ class ImportVintageStoryJSON(Operator, ImportHelper):
 
     def execute(self, context):
         args = self.as_keywords()
-        if args["translate_origin"] == True:
+        if args["do_translate_origin"] == True:
             args["translate_origin"] = [
                 args["translate_origin_x"],
                 args["translate_origin_y"],
@@ -88,7 +88,16 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
     """Exports scene cuboids as VintageStory .json object"""
     bl_idname = "vintagestory.export_json"
     bl_label = "Export as VintageStory .json"
-    
+
+    # these are inherited + not user settable properties
+    skip_save_props = { 
+        "filepath",
+        "check_existing",
+        "initialized",
+        "filter_glob",
+        "translate_origin",
+    }
+
     # operator initialized flag
     initialized: BoolProperty(
         default=False,
@@ -116,7 +125,7 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
     )
 
     # applies default shift from vintagestory origin
-    translate_origin: BoolProperty(
+    do_translate_origin: BoolProperty(
         name="Translate Origin",
         description="Translate model origin after export",
         default=True,
@@ -236,7 +245,7 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
 
     def execute(self, context):
         args = self.as_keywords()
-        if args["translate_origin"] == True:
+        if args["do_translate_origin"] == True:
             args["translate_origin"] = [
                 args["translate_origin_x"],
                 args["translate_origin_y"],
@@ -245,9 +254,10 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
         else:
             args["translate_origin"] = None
         
-        # store run post export script properties to scene
-        bpy.context.scene["vintagestory_run_post_export_script"] = self.run_post_export_script
-        bpy.context.scene["vintagestory_post_export_script"] = self.post_export_script
+        # store executed export config properties to scene
+        for prop, val in args.items():
+            if prop not in self.skip_save_props:
+                bpy.context.scene["vintagestory_export_" + prop] = val
 
         result = export_vintagestory_json.save(context, **args)
 
@@ -270,19 +280,13 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
             self.initialized = True
 
             # first draw: load saved export properties from scene
-            
-            if "vintagestory_run_post_export_script" in bpy.context.scene:
-                prop_run_post_export_script = bpy.context.scene["vintagestory_run_post_export_script"]
-            else:
-                prop_run_post_export_script = False
-            
-            if "vintagestory_post_export_script" in bpy.context.scene:
-                prop_post_export_script = bpy.context.scene["vintagestory_post_export_script"]
-            else:
-                prop_post_export_script = ""
-            
-            self.run_post_export_script = prop_run_post_export_script
-            self.post_export_script = prop_post_export_script
+            args = self.as_keywords()
+            for prop in args.keys():
+                if prop in self.skip_save_props:
+                    continue
+                prop_key = "vintagestory_export_" + prop
+                if prop_key in bpy.context.scene:
+                    setattr(self, prop, bpy.context.scene[prop_key])
 
 
 # export options panel for geometry
@@ -308,7 +312,7 @@ class VINTAGESTORY_PT_export_geometry(bpy.types.Panel):
 
         layout.prop(operator, "selection_only")
         layout.prop(operator, "skip_disabled_render")
-        layout.prop(operator, "translate_origin")
+        layout.prop(operator, "do_translate_origin")
         layout.prop(operator, "translate_origin_x")
         layout.prop(operator, "translate_origin_y")
         layout.prop(operator, "translate_origin_z")
