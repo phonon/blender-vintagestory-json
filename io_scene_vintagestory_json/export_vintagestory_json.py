@@ -863,6 +863,7 @@ def generate_attach_point(
     obj,                           # current object
     parent=None,                   # parent Blender object
     armature=None,                 # Blender Armature object (NOT Armature data)
+    parent_matrix_world=None,      # parent matrix world transform
     parent_cube_origin=None,       # parent cube "from" origin (coords in VintageStory space)
     parent_rotation_origin=None,   # parent object rotation origin (coords in VintageStory space)
     parent_rotation_90deg=None,    # parent 90 degree rotation matrix
@@ -891,7 +892,16 @@ def generate_attach_point(
         mat_loc = parent.matrix_world.inverted_safe() @ obj.matrix_world
         origin, quat, _ = mat_loc.decompose()
         obj_rotation = quat.to_euler("XYZ")
-
+    
+    # more robust but higher performance cost, just get relative
+    # location/rotation from world matrices, required for complex
+    # parent hierarchies with armature bones + object-object parenting
+    if parent_matrix_world is not None:
+        # print(obj.name, "parent_matrix_world", parent_matrix_world)
+        mat_local = parent_matrix_world.inverted_safe() @ obj.matrix_world
+        origin, quat, _ = mat_local.decompose()
+        obj_rotation = quat.to_euler("XYZ")
+    
     # ================================
     # apply parent 90 deg rotations
     # ================================
@@ -902,18 +912,6 @@ def generate_attach_point(
 
         mat_rotation_90deg = np.array(parent_rotation_90deg) # needs to be in numpy format for numpy_matrix @ numpy_array
         origin = mat_rotation_90deg @ origin
-    
-    # ================================
-    # constrain rotation to [-90, 90] by applying all further
-    # 90 deg rotations directly to vertices
-    # ================================
-    residual_rotation, mat_rotation_90deg = decompose_90deg_rotation(obj_rotation)
-
-    if mat_rotation_90deg is not None:
-        mat_rotate_90deg = np.array(mat_rotation_90deg)
-        obj_rotation = residual_rotation
-    else:
-        mat_rotate_90deg = None
 
     # change axis to vintage story y-up axis
     origin = to_y_up(origin)
@@ -1261,32 +1259,50 @@ def save_objects_by_armature(
             cube_origin = bone_element["from"]
             rotation_origin = bone_element["rotationOrigin"]
 
+        # attachment points (will only add entry to bone if exists in mode)
+        attachpoints = []
         
         for obj in bone_children:
             if skip_disabled_render and obj.hide_render:
                 continue
-
-            obj_element = generate_element(
-                obj,
-                skip_disabled_render=skip_disabled_render,
-                parent=None,
-                armature=None,
-                bone_hierarchy=None,
-                is_bone_child=True,
-                groups=groups,
-                model_colors=model_colors,
-                model_textures=model_textures,
-                parent_matrix_world=mat_world,
-                parent_cube_origin=cube_origin,
-                parent_rotation_origin=rotation_origin,
-                parent_rotation_90deg=mat_bone_rot_90deg,
-                export_uvs=export_uvs,
-                export_generated_texture=export_generated_texture,
-                texture_size_x_override=texture_size_x_override,
-                texture_size_y_override=texture_size_y_override,
-            )
-            if obj_element is not None:
-                bone_element["children"].append(obj_element)
+            # attach point empty marker
+            if obj.type == "EMPTY":
+                attachpoint_element = generate_attach_point(
+                    obj,
+                    parent=None,
+                    armature=None,
+                    parent_matrix_world=mat_world,
+                    parent_cube_origin=cube_origin,
+                    parent_rotation_origin=rotation_origin,
+                    parent_rotation_90deg=mat_bone_rot_90deg,
+                )
+                if attachpoint_element is not None:
+                    attachpoints.append(attachpoint_element)
+            else: # assume normal mesh
+                obj_element = generate_element(
+                    obj,
+                    skip_disabled_render=skip_disabled_render,
+                    parent=None,
+                    armature=None,
+                    bone_hierarchy=None,
+                    is_bone_child=True,
+                    groups=groups,
+                    model_colors=model_colors,
+                    model_textures=model_textures,
+                    parent_matrix_world=mat_world,
+                    parent_cube_origin=cube_origin,
+                    parent_rotation_origin=rotation_origin,
+                    parent_rotation_90deg=mat_bone_rot_90deg,
+                    export_uvs=export_uvs,
+                    export_generated_texture=export_generated_texture,
+                    texture_size_x_override=texture_size_x_override,
+                    texture_size_y_override=texture_size_y_override,
+                )
+                if obj_element is not None:
+                    bone_element["children"].append(obj_element)
+        
+        if len(attachpoints) > 0:
+            bone_element["attachmentpoints"] = attachpoints
 
         # recursively add child bones
         for child_bone in bone.children:
