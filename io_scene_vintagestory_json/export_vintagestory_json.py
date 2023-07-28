@@ -747,16 +747,28 @@ def generate_element(
 
         # attach point empty marker
         if child.type == "EMPTY":
-            attachpoint_element = generate_attach_point(
-                child,
-                parent=obj,
-                armature=armature,
-                parent_cube_origin=cube_origin,
-                parent_rotation_origin=rotation_origin,
-                parent_rotation_90deg=mat_rotate_90deg,
-            )
-            if attachpoint_element is not None:
-                attachpoints.append(attachpoint_element)
+            if child.name.startswith("attach_"):
+                attachpoint_element = generate_attach_point(
+                    child,
+                    parent=obj,
+                    armature=armature,
+                    parent_cube_origin=cube_origin,
+                    parent_rotation_origin=rotation_origin,
+                    parent_rotation_90deg=mat_rotate_90deg,
+                )
+                if attachpoint_element is not None:
+                    attachpoints.append(attachpoint_element)
+            elif child.name.startswith("dummy_"):
+                dummy_element = generate_dummy_element(
+                    child,
+                    parent=obj,
+                    armature=armature,
+                    parent_cube_origin=cube_origin,
+                    parent_rotation_origin=rotation_origin,
+                    parent_rotation_90deg=mat_rotate_90deg,
+                )
+                if dummy_element is not None:
+                    children.append(dummy_element)
         else: # assume normal mesh
             child_element = generate_element(
                 child,
@@ -928,6 +940,90 @@ def generate_attach_point(
         "rotationX": rotation[0],
         "rotationY": rotation[1],
         "rotationZ": rotation[2],
+    }
+
+
+def generate_dummy_element(
+    obj,                           # current object
+    parent=None,                   # parent Blender object
+    armature=None,                 # Blender Armature object (NOT Armature data)
+    parent_matrix_world=None,      # parent matrix world transform
+    parent_cube_origin=None,       # parent cube "from" origin (coords in VintageStory space)
+    parent_rotation_origin=None,   # parent object rotation origin (coords in VintageStory space)
+    parent_rotation_90deg=None,    # parent 90 degree rotation matrix
+):
+    """Parse a "dummy" object. In Blender this is an object with
+    "dummy_" prefix, which will be converted into a VS 0-sized cube
+    with all faces disabled. This can be used for positioning
+    "stepParentName" type shape attachments used in VS.
+    """
+    if not obj.name.startswith("dummy_"):
+        return None
+    
+    # get dummy object name
+    name = obj.name[6:]
+
+    """
+    object blender origin and rotation
+    -> if this is part of an armature, must get relative
+    to parent bone
+    """
+    origin = np.array(obj.location)
+    obj_rotation = obj.rotation_euler
+
+    if armature is not None and obj.parent_bone != "":
+        bone_name = obj.parent_bone
+        if bone_name in armature.data.bones:
+            bone_matrix = armature.data.bones[bone_name].matrix_local
+            # print(obj.name, "BONE MATRIX:", bone_matrix)
+        mat_loc = parent.matrix_world.inverted_safe() @ obj.matrix_world
+        origin, quat, _ = mat_loc.decompose()
+        obj_rotation = quat.to_euler("XYZ")
+    
+    # more robust but higher performance cost, just get relative
+    # location/rotation from world matrices, required for complex
+    # parent hierarchies with armature bones + object-object parenting
+    if parent_matrix_world is not None:
+        # print(obj.name, "parent_matrix_world", parent_matrix_world)
+        mat_local = parent_matrix_world.inverted_safe() @ obj.matrix_world
+        origin, quat, _ = mat_local.decompose()
+        obj_rotation = quat.to_euler("XYZ")
+    
+    # ================================
+    # apply parent 90 deg rotations
+    # ================================
+    if parent_rotation_90deg is not None:
+        ax_angle, theta = obj_rotation.to_quaternion().to_axis_angle()
+        transformed_ax_angle = parent_rotation_90deg @ ax_angle
+        obj_rotation = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
+
+        mat_rotation_90deg = np.array(parent_rotation_90deg) # needs to be in numpy format for numpy_matrix @ numpy_array
+        origin = mat_rotation_90deg @ origin
+
+    # change axis to vintage story y-up axis
+    origin = to_y_up(origin)
+    rotation = to_vintagestory_rotation(obj_rotation)
+    
+    # translate to vintage story coord space
+    loc = origin - parent_cube_origin + parent_rotation_origin
+
+    return {
+        "name": name,
+        "from": loc,
+        "to": loc, 
+        "rotationOrigin": loc,
+        "rotationX": rotation[0],
+        "rotationY": rotation[1],
+        "rotationZ": rotation[2],
+        "faces": {
+            "north": { "texture": "#null", "uv": [ 0.0, 0.0, 0.0, 0.0 ], "enabled": False },
+            "east": { "texture": "#null", "uv": [ 0.0, 0.0, 0.0, 0.0 ], "enabled": False },
+            "south": { "texture": "#null", "uv": [ 0.0, 0.0, 0.0, 0.0 ], "enabled": False },
+            "west": { "texture": "#null", "uv": [ 0.0, 0.0, 0.0, 0.0 ], "enabled": False },
+            "up": { "texture": "#null", "uv": [ 0.0, 0.0, 0.0, 0.0 ], "enabled": False },
+            "down": { "texture": "#null", "uv": [ 0.0, 0.0, 0.0, 0.0 ], "enabled": False },
+        },
+        "children": [],
     }
 
 
@@ -1267,17 +1363,30 @@ def save_objects_by_armature(
                 continue
             # attach point empty marker
             if obj.type == "EMPTY":
-                attachpoint_element = generate_attach_point(
-                    obj,
-                    parent=None,
-                    armature=None,
-                    parent_matrix_world=mat_world,
-                    parent_cube_origin=cube_origin,
-                    parent_rotation_origin=rotation_origin,
-                    parent_rotation_90deg=mat_bone_rot_90deg,
-                )
-                if attachpoint_element is not None:
-                    attachpoints.append(attachpoint_element)
+                if obj.name.startswith("attach_"):
+                    attachpoint_element = generate_attach_point(
+                        obj,
+                        parent=None,
+                        armature=None,
+                        parent_matrix_world=mat_world,
+                        parent_cube_origin=cube_origin,
+                        parent_rotation_origin=rotation_origin,
+                        parent_rotation_90deg=mat_bone_rot_90deg,
+                    )
+                    if attachpoint_element is not None:
+                        attachpoints.append(attachpoint_element)
+                elif obj.name.startswith("dummy_"):
+                    dummy_element = generate_dummy_element(
+                        obj,
+                        parent=None,
+                        armature=None,
+                        parent_matrix_world=mat_world,
+                        parent_cube_origin=cube_origin,
+                        parent_rotation_origin=rotation_origin,
+                        parent_rotation_90deg=mat_bone_rot_90deg,
+                    )
+                    if dummy_element is not None:
+                        bone_element["children"].append(dummy_element)
             else: # assume normal mesh
                 obj_element = generate_element(
                     obj,
