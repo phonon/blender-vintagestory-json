@@ -868,6 +868,10 @@ def generate_element(
     if len(attachpoints) > 0:
         new_element["attachmentpoints"] = attachpoints
     
+    # step parent name
+    if "StepParentName" in obj and len(obj["StepParentName"]) > 0:
+        new_element["stepParentName"] = obj["StepParentName"]
+    
     return new_element
 
 
@@ -1007,7 +1011,7 @@ def generate_dummy_element(
     # translate to vintage story coord space
     loc = origin - parent_cube_origin + parent_rotation_origin
 
-    return {
+    element = {
         "name": name,
         "from": loc,
         "to": loc, 
@@ -1025,6 +1029,12 @@ def generate_dummy_element(
         },
         "children": [],
     }
+
+    # optional properties
+    if "StepParentName" in obj and len(obj["StepParentName"]) > 0:
+        element["stepParentName"] = obj["StepParentName"]
+
+    return element
 
 
 def create_dummy_bone_object(

@@ -106,6 +106,13 @@ class VINTAGESTORY_PT_panel_animation_tools(bpy.types.Panel):
             text="Auto Assign Bones",
         )
 
+        # operator: assign step parent name to selected objects
+        layout.operator(
+            operator="vintagestory.assign_step_parent_name",
+            icon="CON_CHILDOF",
+            text="Step Parent Name",
+        )
+
 
 def add_submenu(self, context):
     self.layout.separator()
@@ -122,6 +129,7 @@ classes = [
     primitive.OpPrimitiveAddOctsphere,
     animation.OpMakeBonesXZY,
     animation.OpAssignBones,
+    animation.OpAssignStepParentName,
     uv.OpUVCuboidUnwrap,
     uv.OpUVPixelUnwrap,
     uv.OpUVPackSimpleBoundingBox,

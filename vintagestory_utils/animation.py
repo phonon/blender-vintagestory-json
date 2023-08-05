@@ -147,3 +147,39 @@ class OpAssignBones(bpy.types.Operator):
             bpy.ops.object.mode_set(mode=user_mode)
 
         return {"FINISHED"}
+
+
+class OpAssignStepParentName(bpy.types.Operator):
+    """Assign StepParentName custom property to object."""
+    bl_idname = "vintagestory.assign_step_parent_name"
+    bl_label = "Step Parent Name"
+    bl_options = {"REGISTER", "UNDO"}
+
+    step_parent_name: bpy.props.StringProperty(
+        name="StepParentName",
+        description="Step parent name to add",
+    )
+
+    def invoke(self, context, event):
+        wm = context.window_manager
+        return wm.invoke_props_dialog(self)
+
+    def execute(self, context):
+        args = self.as_keywords()
+
+        # unpack args
+        name = args.get("step_parent_name")
+
+        if name is None:
+            self.report({"ERROR"}, "No name provided")
+            return {"FINISHED"}
+        
+        if len(bpy.context.selected_objects) == 0:
+            self.report({"ERROR"}, "No objects selected")
+            return {"FINISHED"}
+
+        # add "StepParentName" custom StringProperty to selected objects
+        for obj in bpy.context.selected_objects:
+            obj["StepParentName"] = name
+        
+        return {"FINISHED"}
