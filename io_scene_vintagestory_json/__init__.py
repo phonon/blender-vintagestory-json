@@ -184,7 +184,7 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
     generate_texture: BoolProperty(
         name="Generate Color Texture",
         description="Generate texture image from all material colors",
-        default=True,
+        default=False,
     )
     
     use_only_exported_object_colors: BoolProperty(
