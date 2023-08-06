@@ -1207,10 +1207,28 @@ def save_all_animations(bone_hierarchy):
         # skip empty actions
         if len(fcurves) == 0:
             continue
+
+        # action metadata
+        action_name = action.name
+        quantity_frames = None
+        on_activity_stopped = "EaseOut" # default
+        on_animation_end = "Repeat"     # default
+
+        # parse metadata from pose markers
+        for marker in action.pose_markers:
+            if marker.name.startswith("onActivityStopped_"):
+                on_activity_stopped = marker.name[18:]
+            elif marker.name.startswith("onAnimationEnd_"):
+                quantity_frames = marker.frame + 1
+                on_animation_end = marker.name[15:]
         
         # load keyframe data
-        action_name = action.name
-        animation_adapter = animation.AnimationAdapter(action, name=action_name, armature=armature)
+        animation_adapter = animation.AnimationAdapter(
+            action,
+            name=action_name,
+            armature=armature,
+            on_animation_end=on_animation_end,
+        )
 
         # sort fcurves by bone
         for fcu in fcurves:
@@ -1247,19 +1265,6 @@ def save_all_animations(bone_hierarchy):
 
         # convert from Blender bone format to Vintage story format
         keyframes = animation_adapter.create_vintage_story_keyframes(bone_hierarchy)
-
-        # action metadata
-        quantity_frames = None
-        on_activity_stopped = "EaseOut" # default
-        on_animation_end = "Repeat"     # default
-
-        # parse metadata from pose markers
-        for marker in action.pose_markers:
-            if marker.name.startswith("onActivityStopped_"):
-                on_activity_stopped = marker.name[18:]
-            elif marker.name.startswith("onAnimationEnd_"):
-                quantity_frames = marker.frame + 1
-                on_animation_end = marker.name[15:]
         
         # if quantity frames not set from marker metadata, set to last keyframe + 1 (starts at 0)
         if quantity_frames is None:

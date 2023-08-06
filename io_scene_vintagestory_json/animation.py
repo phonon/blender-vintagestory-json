@@ -25,11 +25,45 @@ Mapping to Blender space, we must use XZY euler order for all transforms.
 
 import math
 from mathutils import Vector, Euler, Quaternion, Matrix
+import numpy as np
 
 RAD_TO_DEG = 180.0 / math.pi
 
 ROTATION_MODE_EULER = 0
 ROTATION_MODE_QUATERNION = 1
+
+# when u give up and just brute force closest euler alternatives
+EULER_ALTERNATIVES = np.array([
+    [0.0   , 0.0   , 0.0],
+    [0.0   , 0.0   , 360.0],
+    [0.0   , 0.0   , -360.0],
+    [0.0   , 360.0 , 0.0],
+    [0.0   , 360.0 , 360.0],
+    [0.0   , 360.0 , -360.0],
+    [0.0   , -360.0, 0.0],
+    [0.0   , -360.0, 360.0],
+    [0.0   , -360.0, -360.0],
+
+    [360.0 , 0.0   , 0.0],
+    [360.0 , 0.0   , 360.0],
+    [360.0 , 0.0   , -360.0],
+    [360.0 , 360.0 , 0.0],
+    [360.0 , 360.0 , 360.0],
+    [360.0 , 360.0 , -360.0],
+    [360.0 , -360.0, 0.0],
+    [360.0 , -360.0, 360.0],
+    [360.0 , -360.0, -360.0],
+
+    [-360.0, 0.0   , 0.0],
+    [-360.0, 0.0   , 360.0],
+    [-360.0, 0.0   , -360.0],
+    [-360.0, 360.0 , 0.0],
+    [-360.0, 360.0 , 360.0],
+    [-360.0, 360.0 , -360.0],
+    [-360.0, -360.0, 0.0],
+    [-360.0, -360.0, 360.0],
+    [-360.0, -360.0, -360.0],
+])
 
 def to_vintagestory_rotation(euler):
     """Convert blender space rotation to VS space:
@@ -183,8 +217,13 @@ class KeyframeAdapter():
             keyframe["offsetZ"] = loc.x
 
 
-    def add_rotation_keyframes(self, bone_name, frames, rotations):
-        """Add rotation keyframes, do conversion to y-up
+    def add_rotation_keyframes(self, bone_name, frames, rotations, on_animation_end=""):
+        """Add rotation keyframes, does conversion to y-up.
+        Also does built-in "shortest euler angle tracing" where keyframe
+        rotations are modified to try and minimize max euler angle changes
+        between frames. This is required because vs directly interpolates
+        eulers, and there is a lossy quaternion->euler conversion from
+        blender :^( 
         """
         def get_shortest_angle_deg(start, end):
             # Subtract the angles, constraining the value to [0, 360)
@@ -198,19 +237,6 @@ class KeyframeAdapter():
             # shortest_angle = ((((end - start) % 360) + 540) % 360) - 180
             # return shortest_angle
 
-        def find_closer_angle(start, end):
-            """Find a closer angle by adding/subtracting 360 deg"""
-            delta = abs(end - start)
-            delta_p360 = abs((end + 360) - start)
-            delta_n360 = abs((end - 360) - start)
-
-            if delta < delta_p360 and delta < delta_n360:
-                return end
-            elif delta_p360 < delta_n360:
-                return end + 360
-            else:
-                return end - 360
-
         def get_closer_euler_angle(
             prev_rx,
             prev_ry,
@@ -219,34 +245,42 @@ class KeyframeAdapter():
             ry,
             rz,
         ):
-            # lets try two candidates:
-            # 1. use shortest angle deltas between prev_r and r
+            # try two candidates:
+            # find shortest angle deltas between prev_r and r
             delta_rx = get_shortest_angle_deg(prev_rx, rx)
             delta_ry = get_shortest_angle_deg(prev_ry, ry)
             delta_rz = get_shortest_angle_deg(prev_rz, rz)
 
-            rx_candidate = prev_rx + delta_rx
-            ry_candidate = prev_ry + delta_ry
-            rz_candidate = prev_rz + delta_rz
+            r_main_candidate = np.array([
+                prev_rx + delta_rx,
+                prev_ry + delta_ry,
+                prev_rz + delta_rz,
+            ])
 
-            rx_alt = 180 + rx_candidate
-            ry_alt = 180 - ry_candidate
-            rz_alt = 180 + rz_candidate
+            r_main_alt = np.array([
+                180 + r_main_candidate[0],
+                180 - r_main_candidate[1],
+                180 + r_main_candidate[2],
+            ])
+            
+            # greedy brute force: test 54 closest candidates and pick angle
+            # that minimize sum of square angle delta between keyframes
 
-            if abs(rx_alt - prev_rx) < abs(rx_candidate - prev_rx):
-                return (
-                    find_closer_angle(prev_rx, rx_alt),
-                    find_closer_angle(prev_ry, ry_alt),
-                    find_closer_angle(prev_rz, rz_alt),
-                )
-                # return rx_alt, ry_alt, rz_alt
-            else:
-                return (
-                    find_closer_angle(prev_rx, rx_candidate),
-                    find_closer_angle(prev_ry, ry_candidate),
-                    find_closer_angle(prev_rz, rz_candidate),
-                )
-                # return rx_candidate, ry_candidate, rz_candidate
+            # closest euler candidates 
+            euler_candidates = np.concatenate([
+                r_main_candidate + EULER_ALTERNATIVES,
+                r_main_alt + EULER_ALTERNATIVES,
+            ], axis=0)
+
+            # square magnitude of delta between prev_r and each candidate
+            r_deltas = euler_candidates - np.array([prev_rx, prev_ry, prev_rz])
+            r_deltas_sq = np.sum(r_deltas * r_deltas, axis=1)
+
+            # find index candidate with smallest sum of squared angle delta
+            i_min_delta = np.argmin(r_deltas_sq)
+            r_min_delta = euler_candidates[i_min_delta,:]
+            
+            return r_min_delta[0], r_min_delta[1], r_min_delta[2]
 
         prev_rx = None
         prev_ry = None
@@ -269,6 +303,17 @@ class KeyframeAdapter():
             prev_rx = rx
             prev_ry = ry
             prev_rz = rz
+        
+        if on_animation_end == "repeat" and len(frames) > 0:
+            # force last frame rotation to be same as first frame
+            # otherwise vs will try to interpolate from two far away angles
+            # causing a weird "twisting" effect
+            keyframe_start = self.get_bone_keyframe(bone_name, frames[0])
+            keyframe_end = self.get_bone_keyframe(bone_name, frames[-1])
+
+            keyframe_end["rotationX"] = keyframe_start["rotationX"]
+            keyframe_end["rotationY"] = keyframe_start["rotationY"]
+            keyframe_end["rotationZ"] = keyframe_start["rotationZ"]
 
         # for debugging
         # if bone_name == "b_root":
@@ -312,14 +357,25 @@ class AnimationAdapter():
         index 1 => fcu.y
         index 2 => fcu.z
     """
-    def __init__(self, action, name=None, armature=None):
-        self.name = name                  # name, for debugging only
-        self.action = action              # Blender animation action
-        self.storage = {}                 # store fcurves by name
-        self.armature = armature          # armature, if exist
-        self.bone_rotation_mode = {}      # map of bone name => rotation mode
-                                          # ("rotation_euler" or "rotation_quaternion")
-    
+    def __init__(self, action, name=None, armature=None, on_animation_end="repeat"):
+        # name, for debugging only
+        self.name = name
+
+        # Blender animation action
+        self.action = action
+
+        # store fcurves by name
+        self.storage = {}
+
+        # armature, if exists
+        self.armature = armature
+        
+        # map of bone name => rotation mode
+        # ("rotation_euler" or "rotation_quaternion")
+        self.bone_rotation_mode = {}
+
+        # vintagestory animation end handling
+        self.on_animation_end = on_animation_end.lower()
 
     def set_bone_rotation_mode(self, bone_name, rotation_mode):
         """Map bone_name to rotation_mode.
@@ -540,7 +596,12 @@ class AnimationAdapter():
                     rotation_keyframes.append(rot_vs)
                 
                 # handles conversion degrees and y-up
-                keyframes.add_rotation_keyframes(output_bone_name, frames, rotation_keyframes)
+                keyframes.add_rotation_keyframes(
+                    output_bone_name,
+                    frames, 
+                    rotation_keyframes,
+                    self.on_animation_end,
+                )
 
                 # for converting location keyframes next
                 rotation_matrix_cache = FcurveRotationMatrixCache(
