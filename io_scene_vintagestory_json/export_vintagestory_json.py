@@ -1,9 +1,9 @@
 import bpy
 from bpy import context
 from mathutils import Vector, Euler, Quaternion, Matrix
+from dataclasses import dataclass
 import math
 import numpy as np
-from math import inf
 import posixpath # need "/" separator
 import os
 import json
@@ -258,7 +258,32 @@ def get_material_color(mat):
     return None
 
 
-def get_object_color(obj, material_index, default_color = (0.0, 0.0, 0.0, 1.0)):
+@dataclass
+class FaceMaterial:
+    """Face material data for a single face of a cuboid.
+    """
+    COLOR = 0
+    TEXTURE = 1
+
+    # type enum, one of the integers above 
+    type: int
+    # name of material
+    name: str
+    # color
+    color: tuple[int, int, int, int]
+    # texture path + size
+    texture_path: str = ""
+    # texture size
+    texture_size: tuple[int, int] = (0, 0)
+    # material glow, 0 to 255
+    glow: int = 0
+
+
+def get_face_material(
+    obj,
+    material_index: int,
+    default_color = (0.0, 0.0, 0.0, 1.0)
+) -> FaceMaterial:
     """Get obj material color in index as either 
     - tuple (r, g, b, a) if using a default color input
     - texture file name string "path" if using a texture input
@@ -267,11 +292,35 @@ def get_object_color(obj, material_index, default_color = (0.0, 0.0, 0.0, 1.0)):
         slot = obj.material_slots[material_index]
         material = slot.material
         if material is not None:
+            glow = material["glow"] if "glow" in material else 0
             color = get_material_color(material)
             if color is not None:
-                return color
-    
-    return default_color
+                if isinstance(color, tuple):
+                    return FaceMaterial(
+                        FaceMaterial.COLOR,
+                        name=material.name,
+                        color=color,
+                        glow=glow,
+                    )
+                # texture
+                elif isinstance(color, TextureInfo):
+                    return FaceMaterial(
+                        FaceMaterial.TEXTURE,
+                        name=material.name,
+                        color=default_color,
+                        texture_path=color.path,
+                        texture_size=color.size,
+                        glow=glow,
+                    )
+                
+            # warn that material has no color or texture
+            print(f"WARNING: {obj.name} material {material.name} has no color or texture")
+        
+    return FaceMaterial(
+        FaceMaterial.COLOR,
+        name=material.name,
+        color=default_color,
+    )
 
 
 def loop_is_clockwise(coords):
@@ -585,20 +634,24 @@ def generate_element(
         face_direction_index = np.argmax(np.sum(face_normal_stacked * DIRECTION_NORMALS, axis=1), axis=0)
         d = DIRECTIONS[face_direction_index]
         
-        face_texture = get_object_color(obj, face.material_index)
+        face_material = get_face_material(obj, face.material_index)
         
         # solid color tuple
-        if isinstance(face_texture, tuple) and export_generated_texture:
-            faces[d] = face_texture # replace face with color
+        if face_material.type == FaceMaterial.COLOR and export_generated_texture:
+            faces[d] = face_material # replace face with face material, will convert later
             if model_colors is not None:
-                model_colors.add(face_texture)
+                model_colors.add(face_material.color)
         # texture
-        elif isinstance(face_texture, TextureInfo):
-            faces[d]["texture"] = face_texture.path
-            model_textures[face_texture.path] = face_texture
+        elif face_material.type == FaceMaterial.TEXTURE:
+            faces[d]["texture"] = "#" + face_material.name
+            model_textures[face_material.name] = face_material
 
-            tex_width = face_texture.size[0] if texture_size_x_override is None else texture_size_x_override
-            tex_height = face_texture.size[1] if texture_size_y_override is None else texture_size_y_override
+            # face glow
+            if face_material.glow > 0:
+                faces[d]["glow"] = face_material.glow
+
+            tex_width = face_material.texture_size[0] if texture_size_x_override is None else texture_size_x_override
+            tex_height = face_material.texture_size[1] if texture_size_y_override is None else texture_size_y_override
 
             if export_uvs:
                 # uv loop
@@ -1531,12 +1584,9 @@ def save_objects(
     else:
         model_colors = None
     
-    # all material texture paths and sizes:
-    # tex_name => {
-    #   "path": path,
-    #   "size": [x, y],
-    # }
-    model_textures = {}
+    # all object face material texture or color info
+    # material.name => FaceMaterial
+    model_textures: dict[str, FaceMaterial] = {}
     
     # first pass: check if parsing an armature
     armature = None
@@ -1670,23 +1720,21 @@ def save_objects(
     # note: #0 id reserved for generated color texture
     # ===========================
     texture_refs = {} # maps blender path name -> #n identifiers
-    texture_id = 1    # texture id in "#1" identifier
-    for texture_path, texture_info in model_textures.items():
-        texture_filename = texture_path
+    for material in model_textures.values():
+        texture_filename = material.texture_path
         if texture_filename[0:2] == "//":
             texture_filename = texture_filename[2:]
         texture_filename = texture_filename.replace("\\", "/")
         texture_filename = os.path.split(texture_filename)[1]
         texture_filename = os.path.splitext(texture_filename)[0]
         
-        texture_refs[texture_path] = "#" + str(texture_id)
-        model_json["textures"][str(texture_id)] = posixpath.join(texture_folder, texture_filename)
+        texture_refs[material.name] = "#" + material.name
+        model_json["textures"][material.name] = posixpath.join(texture_folder, texture_filename)
         
-        tex_size_x = texture_info.size[0] if texture_size_x_override is None else texture_size_x_override
-        tex_size_y = texture_info.size[1] if texture_size_y_override is None else texture_size_y_override
+        tex_size_x = material.texture_size[0] if texture_size_x_override is None else texture_size_x_override
+        tex_size_y = material.texture_size[1] if texture_size_y_override is None else texture_size_y_override
 
-        model_json["textureSizes"][str(texture_id)] = [tex_size_x, tex_size_y]
-        texture_id += 1
+        model_json["textureSizes"][material.name] = [tex_size_x, tex_size_y]
 
     # ===========================
     # root object post-processing:
@@ -1713,18 +1761,18 @@ def save_objects(
 
         faces = element["faces"]
         for d, f in faces.items():
-            if isinstance(f, tuple) and color_tex_uv_map is not None:
-                color_uv = color_tex_uv_map[f] if f in color_tex_uv_map else default_color_uv
+            if isinstance(f, FaceMaterial): # face is mapped to a solid color
+                if color_tex_uv_map is not None:
+                    color_uv = color_tex_uv_map[f.color] if f.color in color_tex_uv_map else default_color_uv
+                else:
+                    color_uv = [0, 0, 16, 16]
                 faces[d] = {
                     "uv": color_uv,
                     "texture": "#0",
                 }
-            elif isinstance(f, dict):
-                face_texture = f["texture"]
-                if face_texture in texture_refs:
-                    f["texture"] = texture_refs[face_texture]
-                else:
-                    face_texture = "#0"
+                # glow
+                if f.glow > 0:
+                    faces[d]["glow"] = f.glow
         
         for child in element["children"]:
             final_element_processing(child)
