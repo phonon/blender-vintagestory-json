@@ -1356,6 +1356,7 @@ def save_objects_by_armature(
     export_generated_texture=True, # export generated color texture
     texture_size_x_override=None,  # texture size overrides
     texture_size_y_override=None,  # texture size overrides
+    use_main_object_as_bone=True,  # allow using main object as bone
 ):
     """Recursively save object children of a bone to a parent
     bone object
@@ -1372,7 +1373,7 @@ def save_objects_by_armature(
 
         # main bone object world transform == bone transform, can simply use 
         # as the bone
-        if bone_object is not None and matrix_roughly_equal(bone.matrix_local, bone_object.matrix_world):
+        if use_main_object_as_bone and bone_object is not None and matrix_roughly_equal(bone.matrix_local, bone_object.matrix_world):
             # print(bone.name)
             # print("bone.matrix_local:", bone.matrix_local)
             # print("object.world_matrix:", bone_object.matrix_world)
@@ -1498,6 +1499,7 @@ def save_objects_by_armature(
                 export_generated_texture=export_generated_texture,
                 texture_size_x_override=texture_size_x_override,
                 texture_size_y_override=texture_size_y_override,
+                use_main_object_as_bone=use_main_object_as_bone,
             )
             if child_element is not None:
                 bone_element["children"].append(child_element)
@@ -1521,6 +1523,7 @@ def save_objects(
     decimal_precision=-1,
     export_armature=True,
     export_animations=True,
+    use_main_object_as_bone=True,
     **kwargs
 ):
     """Main exporter function. Parses Blender objects into VintageStory
@@ -1638,6 +1641,7 @@ def save_objects(
                 export_generated_texture=generate_texture,
                 texture_size_x_override=texture_size_x_override,
                 texture_size_y_override=texture_size_y_override,
+                use_main_object_as_bone=use_main_object_as_bone,
             )
             if element is not None:
                 root_elements.append(element)

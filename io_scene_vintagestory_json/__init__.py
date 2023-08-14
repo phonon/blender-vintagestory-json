@@ -212,7 +212,7 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
     )
 
     # ================================
-    # animation options EXPERIMENTAL
+    # animation options
     export_armature: BoolProperty(
         name="Export Armature",
         description="Export by main armature tree",
@@ -222,6 +222,12 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
     export_animations: BoolProperty(
         name="Export Animations",
         description="Export bone animations keyframes",
+        default=True,
+    )
+
+    use_main_object_as_bone: BoolProperty(
+        name="Use Main Object as Bone",
+        description="Use main object with same transform as bone instead of dummy bone",
         default=True,
     )
 
@@ -395,6 +401,7 @@ class VINTAGESTORY_PT_export_animation(bpy.types.Panel):
 
         layout.prop(operator, "export_armature")
         layout.prop(operator, "export_animations")
+        layout.prop(operator, "use_main_object_as_bone")
 
 
 class VINTAGESTORY_PT_export_scripts(bpy.types.Panel):
