@@ -547,6 +547,12 @@ class AnimationAdapter():
                 frames = self.get_all_frames(fcu_name_rotation)
                 rotation_keyframes = []
 
+                # default keyframe samplers
+                fcu_x = DefaultKeyframeSampler(0.0)
+                fcu_y = DefaultKeyframeSampler(0.0)
+                fcu_z = DefaultKeyframeSampler(0.0)
+                fcu_w = DefaultKeyframeSampler(1.0)
+
                 for frame in frames:
                     if rotation_mode == "rotation_euler":
                         # euler strategy:
