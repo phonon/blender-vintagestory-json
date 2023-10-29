@@ -282,9 +282,9 @@ class KeyframeAdapter():
             
             return r_min_delta[0], r_min_delta[1], r_min_delta[2]
 
-        prev_rx = None
-        prev_ry = None
-        prev_rz = None
+        prev_rx = 0
+        prev_ry = 0
+        prev_rz = 0
 
         for frame, rot in zip(frames, rotations):
             # print("frame", frame)
@@ -293,8 +293,7 @@ class KeyframeAdapter():
             ry = rot.z * RAD_TO_DEG
             rz = rot.x * RAD_TO_DEG
             
-            if prev_rx is not None:
-                rx, ry, rz = get_closer_euler_angle(prev_rx, prev_ry, prev_rz, rx, ry, rz)
+            rx, ry, rz = get_closer_euler_angle(prev_rx, prev_ry, prev_rz, rx, ry, rz)
 
             keyframe["rotationX"] = rx
             keyframe["rotationY"] = ry
