@@ -1295,9 +1295,10 @@ def save_all_animations(bone_hierarchy):
             idx_bone_name_end = data_path.find("]", 12) # "] index
             bone_name = data_path[idx_bone_name_start:idx_bone_name_end-1]
 
-            # skip if bone not found (TODO)
-            # if bone_name not in bones:
-            #     continue
+            # skip if bone not found
+            if bone_name not in bones:
+                print(f"WARN: bone {bone_name} not found in armature")
+                continue
             
             bone = bones[bone_name]
             rotation_mode = bone.rotation_mode
