@@ -5,6 +5,7 @@ import math
 import time
 from math import inf
 import bpy
+import bmesh
 from mathutils import Vector, Euler, Quaternion
 from . import animation
 
@@ -117,6 +118,38 @@ def create_textured_principled_bsdf(mat_name, tex_path):
     
     return mat
 
+def should_delete(face, east, west, north, south, up, down):
+    epsilon = 1e-5
+    if face.normal.length_squared < epsilon:
+        return True
+    if not east and face.normal.angle((0, 1, 0)) < epsilon:
+        return True
+    if not west and face.normal.angle((0, -1, 0)) < epsilon:
+        return True
+    if not north and face.normal.angle((-1, 0, 0)) < epsilon:
+        return True
+    if not south and face.normal.angle((1, 0, 0)) < epsilon:
+        return True
+    if not up and face.normal.angle((0, 0, 1)) < epsilon:
+        return True
+    if not down and face.normal.angle((0, 0, -1)) < epsilon:
+        return True
+    return False
+
+def keep_only_faces(cube, east=True, west=True, north=True, south=True, up=True, down=True):
+    if east and west and north and south and up and down:
+        return
+    if cube.data.is_editmode:
+        bm = bmesh.from_edit_mesh(cube.data)
+    else:
+        bm = bmesh.new()
+        bm.from_mesh(cube.data)
+    bmesh.ops.delete(bm, geom=[f for f in bm.faces if should_delete(f, east, west, north, south, up, down)], context='FACES_ONLY')
+    if bm.is_wrapped:
+        bmesh.update_edit_mesh(cube.data)
+    else:
+        bm.to_mesh(cube.data)
+        cube.data.update()
 
 def parse_element(
     e,
@@ -287,6 +320,7 @@ def parse_element(
 
     # set name (choose whatever is available or "cube" if no name or comment is given)
     obj.name = e.get("name") or "cube"
+    keep_only_faces(obj, east='east' in  e.get("faces"), west='west' in e.get("faces"), north='north' in e.get("faces"), south='south' in e.get("faces"), up='up' in e.get("faces"), down='down' in e.get("faces"))
 
     return obj, v_min, new_cube_origin, new_rotation_origin
 
