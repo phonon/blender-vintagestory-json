@@ -120,6 +120,8 @@ def create_textured_principled_bsdf(mat_name, tex_path):
 
 def should_delete(face, east, west, north, south, up, down):
     epsilon = 1e-5
+    if face.normal.length_squared < epsilon:
+        return True
     if not east and face.normal.angle((0, 1, 0)) < epsilon:
         return True
     if not west and face.normal.angle((0, -1, 0)) < epsilon:
@@ -142,7 +144,7 @@ def keep_only_faces(cube, east=True, west=True, north=True, south=True, up=True,
     else:
         bm = bmesh.new()
         bm.from_mesh(cube.data)
-    bmesh.ops.delete(bm, geom=[f for f in bm.faces if should_delete(f, east, west, north, south, up, down)], context='FACES')
+    bmesh.ops.delete(bm, geom=[f for f in bm.faces if should_delete(f, east, west, north, south, up, down)], context='FACES_ONLY')
     if bm.is_wrapped:
         bmesh.update_edit_mesh(cube.data)
     else:
