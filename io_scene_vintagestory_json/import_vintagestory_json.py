@@ -5,6 +5,7 @@ import math
 import time
 from math import inf
 import bpy
+import bmesh
 from mathutils import Vector, Euler, Quaternion
 from . import animation
 
@@ -117,6 +118,21 @@ def create_textured_principled_bsdf(mat_name, tex_path):
     
     return mat
 
+def face_enabled(faces, direction):
+    if not direction in faces:
+        return False
+    if not "enabled" in faces.get(direction):
+        return True
+    return faces.get(direction).get("enabled")
+
+def should_delete(face, enabled_faces):
+    epsilon = 1e-5
+    if face.normal.length_squared < epsilon:
+        return True
+    for i in range(len(DIRECTIONS)):
+        if not enabled_faces[i] and face.normal.angle(DIRECTION_NORMALS[0][i]) < epsilon:
+            return True
+    return False
 
 def parse_element(
     e,
@@ -287,9 +303,22 @@ def parse_element(
 
     # set name (choose whatever is available or "cube" if no name or comment is given)
     obj.name = e.get("name") or "cube"
+    # skip disabled faces
+    enabled_faces = [face_enabled(e.get("faces"), x) for x in DIRECTIONS]
+    if not all(enabled_faces):
+        if obj.data.is_editmode:
+            bm = bmesh.from_edit_mesh(obj.data)
+        else:
+            bm = bmesh.new()
+            bm.from_mesh(obj.data)
+        bmesh.ops.delete(bm, geom=[f for f in bm.faces if should_delete(f, enabled_faces)], context='FACES_ONLY')
+        if bm.is_wrapped:
+            bmesh.update_edit_mesh(obj.data)
+        else:
+            bm.to_mesh(obj.data)
+            obj.data.update()
 
     return obj, v_min, new_cube_origin, new_rotation_origin
-
 
 def parse_attachpoint(
     e,                      # json element

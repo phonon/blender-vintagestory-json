@@ -603,12 +603,12 @@ def generate_element(
 
     # initialize faces
     faces = {
-        "north": {"texture": "#0", "uv": [0, 0, 4, 4], "autoUv": False},
-        "east": {"texture": "#0", "uv": [0, 0, 4, 4], "autoUv": False},
-        "south": {"texture": "#0", "uv": [0, 0, 4, 4], "autoUv": False},
-        "west": {"texture": "#0", "uv": [0, 0, 4, 4], "autoUv": False},
-        "up": {"texture": "#0", "uv": [0, 0, 4, 4], "autoUv": False},
-        "down": {"texture": "#0", "uv": [0, 0, 4, 4], "autoUv": False},
+        "north": {"texture": "#0", "uv": [0, 0, 4, 4], "autoUv": False, "enabled": False},
+        "east": {"texture": "#0", "uv": [0, 0, 4, 4], "autoUv": False, "enabled": False},
+        "south": {"texture": "#0", "uv": [0, 0, 4, 4], "autoUv": False, "enabled": False},
+        "west": {"texture": "#0", "uv": [0, 0, 4, 4], "autoUv": False, "enabled": False},
+        "up": {"texture": "#0", "uv": [0, 0, 4, 4], "autoUv": False, "enabled": False},
+        "down": {"texture": "#0", "uv": [0, 0, 4, 4], "autoUv": False, "enabled": False},
     }
     
     uv_layer = mesh.uv_layers.active.data
@@ -633,6 +633,7 @@ def generate_element(
         # get face direction string
         face_direction_index = np.argmax(np.sum(face_normal_stacked * DIRECTION_NORMALS, axis=1), axis=0)
         d = DIRECTIONS[face_direction_index]
+        faces[d]["enabled"] = True
         
         face_material = get_face_material(obj, face.material_index)
         
