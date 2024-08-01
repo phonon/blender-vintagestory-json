@@ -126,7 +126,7 @@ def to_y_up(arr):
     return np.array([arr[1], arr[2], arr[0]])
 
 
-def to_vintagestory_rotation(euler):
+def to_vintagestory_rotation(rot):
     """Convert blender space rotation to VS space:
     VS space XYZ euler is blender space XZY euler,
     so convert euler order, then rename axes
@@ -134,9 +134,12 @@ def to_vintagestory_rotation(euler):
         Y -> X
         Z -> Y
     Inputs:
-    - euler: Blender euler rotation
+    - euler: Blender rotation, either euler or quat
     """
-    r = euler.to_quaternion().to_euler("XZY")
+    if isinstance(rot, Quaternion):
+        r = rot.to_euler("XZY")
+    else: # euler or rotation matrix
+        r = rot.to_quaternion().to_euler("XZY")
     return np.array([
         r.y * RAD_TO_DEG,
         r.z * RAD_TO_DEG,
@@ -1525,6 +1528,7 @@ def save_objects(
     export_armature=True,
     export_animations=True,
     use_main_object_as_bone=True,
+    use_step_parent=True,
     **kwargs
 ):
     """Main exporter function. Parses Blender objects into VintageStory
@@ -1565,6 +1569,12 @@ def save_objects(
         attaches generated elements to their bone parent.
     - export_animations:
         Export bones and animation actions.
+    - use_main_object_as_bone:
+        Detect if bone and same named parent object have same transform
+        and collapse into a single object (to reduce element count).
+    - use_step_parent:
+        Transform root elements relative to their step parent element, so
+        elements are correctly attached in game.
     """
 
     # output json model stub
@@ -1684,7 +1694,7 @@ def save_objects(
                 color = get_material_color(mat)
                 if isinstance(color, tuple):
                     model_colors.add(color)
-       
+        
         tex_pixels, tex_size, color_tex_uv_map, default_color_uv = create_color_texture(model_colors)
 
         # texture output filepaths
@@ -1741,13 +1751,70 @@ def save_objects(
 
         model_json["textureSizes"][material.name] = [tex_size_x, tex_size_y]
 
-    # ===========================
-    # root object post-processing:
-    # 1. recenter with origin shift
-    # ===========================
+    # =========================================================================
+    # root object step parent + origin shift post-processing:
+    # 1. transform relative to step parent
+    # 2. recenter with origin shift
+    # =========================================================================
+    # transform position relative to step parent, this will search for
+    #   (1) armatures
+    #   (2) root objects in scene
+    # until first object found, then will cache the object
+    if use_step_parent:
+        step_parent_matrix_world_inv = {} # map step parent name => matrix world inv
+        for element in root_elements:
+            if "stepParentName" in element:
+                step_parent_name = element["stepParentName"]
+                
+                # "b_[name]" is hard-coded bone prefix, convention for this
+                # plugin. if step parent name starts with "b_", remove prefix
+                if step_parent_name.startswith("b_"):
+                    step_parent_name = step_parent_name[2:]
+                
+                if step_parent_name not in step_parent_matrix_world_inv:
+                    for obj in bpy.context.scene.collection.all_objects:
+                        # if this is armature, search armature bones for step parent name
+                        if isinstance(obj.data, bpy.types.Armature):
+                            for bone in obj.data.bones:
+                                if bone.name == step_parent_name:
+                                    # multiply local by armature matrix world
+                                    bone_mat_world = obj.matrix_world @ bone.matrix_local
+                                    step_parent_matrix_world_inv[step_parent_name] = bone_mat_world.inverted_safe()
+                                    break
+                        if obj.name == step_parent_name or f"b_{obj.name}" == step_parent_name:
+                            step_parent_matrix_world_inv[step_parent_name] = obj.matrix_world.inverted_safe()
+                            break
+                
+                if step_parent_name in step_parent_matrix_world_inv:
+                    # transform element relative to step parent:
+                    # decompose step parent matrix world into
+                    # rotation and translation, apply inverse to element
+                    step_parent_matrix_inv = step_parent_matrix_world_inv[step_parent_name]
+                    translation, quat, _ = step_parent_matrix_inv.decompose()
+                    translation = to_y_up(translation) # blender -> vs space
+                    euler = to_vintagestory_rotation(quat) # quat -> vs space euler
+
+                    element["from"] = element["from"] + translation
+                    element["to"] = element["to"] + translation
+                    element["rotationOrigin"] = element["rotationOrigin"] + translation
+
+                    for idx_rot, rot in (
+                        (0, "rotationX"),
+                        (1, "rotationY"),
+                        (2, "rotationZ")
+                    ):
+                        if euler[idx_rot] == 0.0:
+                            continue
+                        if rot in element:
+                            element[rot] += euler[idx_rot]
+                        else:
+                            element[rot] = euler[idx_rot]
+                else:
+                    print("WARN: step parent not found for", step_parent_name)
+
     if translate_origin is not None:
         translate_origin = to_y_up(translate_origin)
-        for element in root_elements:
+        for element in root_elements:        
             # re-centering
             element["to"] = translate_origin + element["to"]
             element["from"] = translate_origin + element["from"]

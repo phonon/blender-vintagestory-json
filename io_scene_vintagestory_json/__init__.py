@@ -232,6 +232,14 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
     )
 
     # ================================
+    # step parent options
+    use_step_parent: BoolProperty(
+        name="Use Step Parent",
+        description="Transform element relative to step parent (for attachments like clothes)",
+        default=True,
+    )
+
+    # ================================
     # run post-export python script
 
     # get stored property from scene
@@ -318,6 +326,7 @@ class VINTAGESTORY_PT_export_geometry(bpy.types.Panel):
 
         layout.prop(operator, "selection_only")
         layout.prop(operator, "skip_disabled_render")
+        layout.prop(operator, "use_step_parent")
         layout.prop(operator, "do_translate_origin")
         layout.prop(operator, "translate_origin_x")
         layout.prop(operator, "translate_origin_y")
