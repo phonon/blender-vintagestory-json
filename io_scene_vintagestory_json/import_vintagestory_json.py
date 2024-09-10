@@ -40,6 +40,7 @@ DIRECTION_NORMALS = np.array([
 ])
 DIRECTION_NORMALS = np.tile(DIRECTION_NORMALS[np.newaxis,...], (6,1,1))
 
+VS_NO_MATERIAL = "VS_NO_MATERIAL"
 
 def index_of(val, in_list):
     """Return index of value in in_list"""
@@ -83,6 +84,20 @@ def get_base_path(filepath_parts, curr_branch=None, new_branch=None):
         return joined_path
     else:
         return "" # failed
+
+
+def get_empty_principle_bsdf():
+    """ Create a new material `VS_NO_MATERIAL` which defines part of the model that has no set UV, and is pretty not visible in the game """
+    # If a face is not defined the material should be considered not to have the same material as other faces!
+    # There is no UV coordinates setup, so best looks is that we simply ignore there in Blender. for that we need a material
+    if VS_NO_MATERIAL not in bpy.data.materials:
+        print("CREATING NEW MATERIALS")
+        empty = bpy.data.materials.new(VS_NO_MATERIAL)
+        empty.use_nodes = True
+        bsdf = empty.node_tree.nodes.get("Principled BSDF") 
+        bsdf.inputs[4].default_value = 0.0 # set default alpha to 0.0
+
+    return bpy.data.materials[VS_NO_MATERIAL]
 
 
 def create_textured_principled_bsdf(mat_name, tex_path):
@@ -284,6 +299,16 @@ def parse_element(
                             obj.data.materials.append(textures[tex_name])
                             mesh_materials[tex_name] = idx
                             face.material_index = idx
+                else:
+                    if VS_NO_MATERIAL in mesh_materials:
+                        face.material_index = mesh_materials[VS_NO_MATERIAL]
+                    elif VS_NO_MATERIAL in textures: # need new mapping
+                        idx = len(obj.data.materials)
+                        obj.data.materials.append(textures[VS_NO_MATERIAL])
+                        mesh_materials[VS_NO_MATERIAL] = idx
+                        face.material_index = idx
+
+                    face.material_index = mesh_materials[VS_NO_MATERIAL]
 
     # set name (choose whatever is available or "cube" if no name or comment is given)
     obj.name = e.get("name") or "cube"
@@ -732,7 +757,11 @@ def load(context,
     tex_width = data["textureWidth"] if "textureWidth" in data else 16.0
     tex_height = data["textureHeight"] if "textureHeight" in data else 16.0
     textures = {}
+    
     if import_textures and "textures" in data:
+        # create based line empty material for when something is -not- defined
+        textures[VS_NO_MATERIAL] = get_empty_principle_bsdf()
+
         # get textures base path for models
         tex_base_path = get_base_path(filepath_parts, curr_branch="shapes", new_branch="textures")
 
