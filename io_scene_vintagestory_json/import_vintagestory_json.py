@@ -110,6 +110,7 @@ def create_textured_principled_bsdf(mat_name, tex_path):
         
             tex_input.image = img
             node_tree.links.new(tex_input.outputs[0], bsdf.inputs["Base Color"])
+            node_tree.links.new(tex_input.outputs[1], bsdf.inputs["Alpha"]) #  We also want the alpha to be bound to not confuse the end user.
         
         # disable shininess
         if "Specular" in bsdf.inputs:
