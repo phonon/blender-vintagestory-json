@@ -1239,7 +1239,10 @@ def print_bone_hierarchy(hierarchy):
     print("===========================================")
 
 
-def save_all_animations(bone_hierarchy):
+def save_all_animations(
+    bone_hierarchy,
+    animation_version_0=False, # use old vintagestory animation version 0
+):
     """Save all animation actions in Blender file
     """
     animations = []
@@ -1284,6 +1287,7 @@ def save_all_animations(bone_hierarchy):
             name=action_name,
             armature=armature,
             on_animation_end=on_animation_end,
+            animation_version_0=animation_version_0,
         )
 
         # sort fcurves by bone
@@ -1334,6 +1338,7 @@ def save_all_animations(bone_hierarchy):
         action_export = {
             "name": action_name,
             "code": action_name,
+            "version": 0 if animation_version_0 else 1, # https://github.com/anegostudios/vsapi/blob/master/Common/Model/Shape/ShapeElement.cs#L277
             "quantityframes": quantity_frames,
             "onActivityStopped": on_activity_stopped,
             "onAnimationEnd": on_animation_end,
@@ -1529,6 +1534,7 @@ def save_objects(
     export_animations=True,
     use_main_object_as_bone=True,
     use_step_parent=True,
+    animation_version_0=False,
     **kwargs
 ):
     """Main exporter function. Parses Blender objects into VintageStory
@@ -1822,8 +1828,9 @@ def save_objects(
     
     # ===========================
     # all object post processing
+    # 1. convert numpy to python list
     # 2. map solid color face uv -> location in generated texture
-    # 3. rewrite path textures -> texture name reference
+    # 3. disable faces with user specified disable texture
     # ===========================
     def final_element_processing(element):
         # convert numpy to python list
@@ -1845,7 +1852,7 @@ def save_objects(
                 # glow
                 if f.glow > 0:
                     faces[d]["glow"] = f.glow
-        
+            
         for child in element["children"]:
             final_element_processing(child)
         
@@ -1871,7 +1878,10 @@ def save_objects(
     # export animations
     # ===========================
     if export_animations:
-        animations = save_all_animations(bone_hierarchy)
+        animations = save_all_animations(
+            bone_hierarchy,
+            animation_version_0=animation_version_0,
+        )
         if len(animations) > 0:
             model_json["animations"] = animations
 

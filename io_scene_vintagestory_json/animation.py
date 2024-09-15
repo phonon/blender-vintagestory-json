@@ -219,6 +219,27 @@ class KeyframeAdapter():
 
     def add_rotation_keyframes(self, bone_name, frames, rotations, on_animation_end=""):
         """Add rotation keyframes, does conversion to y-up.
+        """
+        for frame, rot in zip(frames, rotations):
+            keyframe = self.get_bone_keyframe(bone_name, frame)
+            keyframe["rotationX"] = rot.y * RAD_TO_DEG
+            keyframe["rotationY"] = rot.z * RAD_TO_DEG
+            keyframe["rotationZ"] = rot.x * RAD_TO_DEG
+        
+        if on_animation_end == "repeat" and len(frames) > 0:
+            # force last frame rotation to be same as first frame
+            # otherwise vs will try to interpolate from two far away angles
+            # causing a weird "twisting" effect
+            keyframe_start = self.get_bone_keyframe(bone_name, frames[0])
+            keyframe_end = self.get_bone_keyframe(bone_name, frames[-1])
+
+            keyframe_end["rotationX"] = keyframe_start["rotationX"]
+            keyframe_end["rotationY"] = keyframe_start["rotationY"]
+            keyframe_end["rotationZ"] = keyframe_start["rotationZ"]
+
+    
+    def add_rotation_keyframes_version_0(self, bone_name, frames, rotations, on_animation_end=""):
+        """Add rotation keyframes, does conversion to y-up.
         Also does built-in "shortest euler angle tracing" where keyframe
         rotations are modified to try and minimize max euler angle changes
         between frames. This is required because vs directly interpolates
@@ -356,7 +377,14 @@ class AnimationAdapter():
         index 1 => fcu.y
         index 2 => fcu.z
     """
-    def __init__(self, action, name=None, armature=None, on_animation_end="repeat"):
+    def __init__(
+        self,
+        action,
+        name=None,
+        armature=None,
+        on_animation_end="repeat",
+        animation_version_0=False,
+    ):
         # name, for debugging only
         self.name = name
 
@@ -375,6 +403,13 @@ class AnimationAdapter():
 
         # vintagestory animation end handling
         self.on_animation_end = on_animation_end.lower()
+
+        # animation version 0: old vintagestory format which uses
+        # R*T*v format and additive bone euler rotation in keyframes
+        # this causes incompatible transforms/animations with blender,
+        # only use version 0 for testing/seeing old animation format
+        self.animation_version_0 = animation_version_0
+    
 
     def set_bone_rotation_mode(self, bone_name, rotation_mode):
         """Map bone_name to rotation_mode.
@@ -566,7 +601,6 @@ class AnimationAdapter():
                             fcu_z.evaluate(frame),
                         ), "XZY")
                         keyframe_effective_euler = rot_anim
-                        keyframe_effective_euler.rotate(bone_rot_local_euler)
                     elif rotation_mode == "rotation_quaternion":
                         # quaternion strategy:
                         # need to convert quaternion to euler which is intrinsically ill defined
@@ -581,41 +615,59 @@ class AnimationAdapter():
                             fcu_y.evaluate(frame),
                             fcu_z.evaluate(frame),
                         ))
-                        # doing it this way seems more stable than below
                         keyframe_effective_euler = rot_anim.to_euler("XZY")
-                        keyframe_effective_euler.rotate(bone_rot_local_euler)
-                        # OLD WAY: less stable
-                        # keyframe_effective_euler = bone.matrix @ rot_anim.to_matrix()
-                        # keyframe_effective_euler = keyframe_effective_euler.to_euler("XZY")
                     else:
                         raise ValueError(f"Unsupported rotation mode: {rotation_mode}")
                     
-                    # note vintage story does rotations using:
-                    #   GL11.glRotated(AnimatedElement.rotationX + getRotationX(), 1, 0, 0);
-                    # so our keyframe value is actually the delta between the target effective
-                    # euler angle and the bone's local euler angle, r = r_total - r_local.
-                    rx = keyframe_effective_euler.x - bone_rot_local_euler.x
-                    ry = keyframe_effective_euler.y - bone_rot_local_euler.y
-                    rz = keyframe_effective_euler.z - bone_rot_local_euler.z
+                    if self.animation_version_0:
+                        # animation version 0: vintage story does rotations using:
+                        #   GL11.glRotated(AnimatedElement.rotationX + getRotationX(), 1, 0, 0);
+                        # so our keyframe value is actually the delta between the target effective
+                        # euler angle and the bone's local euler angle, r = r_total - r_local.
+                        keyframe_effective_euler.rotate(bone_rot_local_euler)
+                        rx = keyframe_effective_euler.x - bone_rot_local_euler.x
+                        ry = keyframe_effective_euler.y - bone_rot_local_euler.y
+                        rz = keyframe_effective_euler.z - bone_rot_local_euler.z
+                    else:
+                        # new format, bone keyframe transform applied onto local transform,
+                        # can use same format as blender
+                        rx = keyframe_effective_euler.x
+                        ry = keyframe_effective_euler.y
+                        rz = keyframe_effective_euler.z
                     rot_vs = Euler((rx, ry, rz), "XZY")
                     rotation_keyframes.append(rot_vs)
                 
-                # handles conversion degrees and y-up
-                keyframes.add_rotation_keyframes(
-                    output_bone_name,
-                    frames, 
-                    rotation_keyframes,
-                    self.on_animation_end,
-                )
+                # handles conversion from radians to degrees and to y-up
+                if self.animation_version_0:
+                    keyframes.add_rotation_keyframes_version_0(
+                        output_bone_name,
+                        frames, 
+                        rotation_keyframes,
+                        self.on_animation_end,
+                    )
 
-                # for converting location keyframes next
-                rotation_matrix_cache = FcurveRotationMatrixCache(
-                    rotation_mode,
-                    fcu_x,
-                    fcu_y,
-                    fcu_z,
-                    fcu_w,
-                )
+                    # animation version 0: need to convert between vintagestory
+                    #   v' = R*T*v
+                    # versus blender:
+                    #   v' = T*R*v
+                    # must collect rotation matrices for converting location
+                    # keyframes in the next step
+                    rotation_matrix_cache = FcurveRotationMatrixCache(
+                        rotation_mode,
+                        fcu_x,
+                        fcu_y,
+                        fcu_z,
+                        fcu_w,
+                    )
+                else:
+                    # new animation format in line with blender
+                    keyframes.add_rotation_keyframes(
+                        output_bone_name,
+                        frames, 
+                        rotation_keyframes,
+                        self.on_animation_end,
+                    )
+                    rotation_matrix_cache = None
             else:
                 rotation_matrix_cache = None
             
@@ -637,11 +689,17 @@ class AnimationAdapter():
                         fcu_z.evaluate(frame),
                     ))
 
-                    # apply inverse rotation matrix
-                    if loc.x != 0.0 or loc.y != 0.0 or loc.z != 0.0:
-                        if rotation_matrix_cache is not None:
-                            rot_mat_inverse = rotation_matrix_cache.get_inverse(frame)
-                            loc = rot_mat_inverse @ loc
+                    if self.animation_version_0:
+                        # vintagestory old animation version 0
+                        # apply inverse rotation matrix to convert
+                        #     VintageStory: w = R(v + u)
+                        #     Blender:      w = Rv + u'
+                        # where u' = R*u -> u = R^-1 * u'
+                        if loc.x != 0.0 or loc.y != 0.0 or loc.z != 0.0:
+                            if rotation_matrix_cache is not None:
+                                rot_mat_inverse = rotation_matrix_cache.get_inverse(frame)
+                                loc = rot_mat_inverse @ loc
+                    
                     location_keyframes.append(loc)
                 
                 # handles conversion to y-up

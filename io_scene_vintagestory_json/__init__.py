@@ -231,6 +231,12 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
         default=True,
     )
 
+    animation_version_0: BoolProperty(
+        name="Use Animation Version 0",
+        description="Use old vintagestory animation format with incompatible transform order",
+        default=False,
+    )
+
     # ================================
     # step parent options
     use_step_parent: BoolProperty(
@@ -411,6 +417,7 @@ class VINTAGESTORY_PT_export_animation(bpy.types.Panel):
         layout.prop(operator, "export_armature")
         layout.prop(operator, "export_animations")
         layout.prop(operator, "use_main_object_as_bone")
+        layout.prop(operator, "animation_version_0")
 
 
 class VINTAGESTORY_PT_export_scripts(bpy.types.Panel):
