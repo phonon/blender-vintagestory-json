@@ -423,7 +423,7 @@ def create_color_texture(
     return tex_pixels, tex_size, color_tex_uv_map, default_color_uv
 
 
-def generate_element(
+def generate_mesh_element(
     obj,                           # current object
     skip_disabled_render=True,     # skip children with disabled render 
     parent=None,                   # parent Blender object
@@ -825,49 +825,27 @@ def generate_element(
         if skip_disabled_render and child.hide_render:
             continue
 
-        # attach point empty marker
-        if child.type == "EMPTY":
+        child_element = generate_element(
+            child,
+            skip_disabled_render=skip_disabled_render,
+            parent=obj,
+            armature=None,
+            bone_hierarchy=None,
+            groups=groups,
+            model_colors=model_colors,
+            model_textures=model_textures,
+            parent_matrix_world=matrix_world,
+            parent_cube_origin=cube_origin,
+            parent_rotation_origin=rotation_origin,
+            parent_rotation_90deg=mat_rotate_90deg,
+            export_uvs=export_uvs,
+            texture_size_x_override=texture_size_x_override,
+            texture_size_y_override=texture_size_y_override,
+        )
+        if child_element is not None:
             if child.name.startswith("attach_"):
-                attachpoint_element = generate_attach_point(
-                    child,
-                    parent=obj,
-                    armature=armature,
-                    parent_cube_origin=cube_origin,
-                    parent_rotation_origin=rotation_origin,
-                    parent_rotation_90deg=mat_rotate_90deg,
-                )
-                if attachpoint_element is not None:
-                    attachpoints.append(attachpoint_element)
-            elif child.name.startswith("dummy_"):
-                dummy_element = generate_dummy_element(
-                    child,
-                    parent=obj,
-                    armature=armature,
-                    parent_cube_origin=cube_origin,
-                    parent_rotation_origin=rotation_origin,
-                    parent_rotation_90deg=mat_rotate_90deg,
-                )
-                if dummy_element is not None:
-                    children.append(dummy_element)
-        else: # assume normal mesh
-            child_element = generate_element(
-                child,
-                skip_disabled_render=skip_disabled_render,
-                parent=obj,
-                armature=None,
-                bone_hierarchy=None,
-                groups=groups,
-                model_colors=model_colors,
-                model_textures=model_textures,
-                parent_matrix_world=matrix_world,
-                parent_cube_origin=cube_origin,
-                parent_rotation_origin=rotation_origin,
-                parent_rotation_90deg=mat_rotate_90deg,
-                export_uvs=export_uvs,
-                texture_size_x_override=texture_size_x_override,
-                texture_size_y_override=texture_size_y_override,
-            )
-            if child_element is not None:
+                attachpoints.append(child_element)
+            else:
                 children.append(child_element)
 
     # use parent bone children if this is part of an armature
@@ -913,7 +891,10 @@ def generate_element(
                 texture_size_y_override=texture_size_y_override,
             )
             if child_element is not None:
-                children.append(child_element)
+                if child.name.startswith("attach_"):
+                    attachpoints.append(child_element)
+                else:
+                    children.append(child_element)
 
     # ================================
     # build element
@@ -963,6 +944,7 @@ def generate_attach_point(
     parent_cube_origin=None,       # parent cube "from" origin (coords in VintageStory space)
     parent_rotation_origin=None,   # parent object rotation origin (coords in VintageStory space)
     parent_rotation_90deg=None,    # parent 90 degree rotation matrix
+    **kwargs,
 ):
     """Parse an attachment point
     """
@@ -980,7 +962,7 @@ def generate_attach_point(
     origin = np.array(obj.location)
     obj_rotation = obj.rotation_euler
 
-    if armature is not None and obj.parent_bone != "":
+    if armature is not None and obj.parent is not None and obj.parent_bone != "":
         bone_name = obj.parent_bone
         if bone_name in armature.data.bones:
             bone_matrix = armature.data.bones[bone_name].matrix_local
@@ -1031,10 +1013,12 @@ def generate_dummy_element(
     obj,                           # current object
     parent=None,                   # parent Blender object
     armature=None,                 # Blender Armature object (NOT Armature data)
+    bone_hierarchy=None,           # map of armature bones => children mesh objects
     parent_matrix_world=None,      # parent matrix world transform
     parent_cube_origin=None,       # parent cube "from" origin (coords in VintageStory space)
     parent_rotation_origin=None,   # parent object rotation origin (coords in VintageStory space)
     parent_rotation_90deg=None,    # parent 90 degree rotation matrix
+    **kwargs,
 ):
     """Parse a "dummy" object. In Blender this is an object with
     "dummy_" prefix, which will be converted into a VS 0-sized cube
@@ -1055,7 +1039,7 @@ def generate_dummy_element(
     origin = np.array(obj.location)
     obj_rotation = obj.rotation_euler
 
-    if armature is not None and obj.parent_bone != "":
+    if armature is not None and obj.parent is not None and obj.parent_bone != "":
         bone_name = obj.parent_bone
         if bone_name in armature.data.bones:
             bone_matrix = armature.data.bones[bone_name].matrix_local
@@ -1063,6 +1047,28 @@ def generate_dummy_element(
         mat_loc = parent.matrix_world.inverted_safe() @ obj.matrix_world
         origin, quat, _ = mat_loc.decompose()
         obj_rotation = quat.to_euler("XYZ")
+    
+    # use step parent bone if available
+    if "StepParentName" in obj and len(obj["StepParentName"]) > 0:
+        step_parent_name = obj["StepParentName"]
+        # "b_[name]" is hard-coded bone prefix, convention for this
+        # plugin. if step parent name starts with "b_", remove prefix
+        if step_parent_name.startswith("b_"):
+            bone_parent_name = step_parent_name[2:]
+        else:
+            bone_parent_name = step_parent_name
+    else:
+        step_parent_name = None
+        bone_parent_name = None
+
+    if bone_parent_name is not None and bone_parent_name in armature.data.bones and bone_parent_name in bone_hierarchy:
+        parent_bone = armature.data.bones[bone_parent_name]
+        parent_matrix_world = parent_bone.matrix_local.copy()
+        parent_cube_origin = parent_bone.head
+        parent_rotation_origin = parent_bone.head
+        parent_rotation_90deg = bone_hierarchy[bone_parent_name].mat_rotation_90deg
+    else:
+        print(f"WARNING: cannot find {obj.name} step parent bone {bone_parent_name}")
     
     # more robust but higher performance cost, just get relative
     # location/rotation from world matrices, required for complex
@@ -1142,6 +1148,22 @@ def create_dummy_bone_object(
         },
         "children": [],
     }
+
+
+def generate_element(
+    obj,
+    **kwargs,
+):
+    """Routes to correct element generation function based on object type.
+    """
+    if obj.type == "EMPTY":
+        if obj.name.startswith("attach_"):
+            return generate_attach_point(obj, **kwargs)
+        elif obj.name.startswith("dummy_"):
+            return generate_dummy_element(obj, **kwargs)
+    else:
+        # TODO: check for quad type
+        return generate_mesh_element(obj, **kwargs)
 
 
 class BoneNode():
@@ -1439,7 +1461,7 @@ def save_objects_by_armature(
             # print("bone.matrix_local:", bone.matrix_local)
             # print("object.world_matrix:", bone_object.matrix_world)
             # print("MATRIX EQUAL")
-            bone_element = generate_element(
+            bone_element = generate_mesh_element(
                 bone_object,
                 skip_disabled_render=skip_disabled_render,
                 parent=None,
@@ -1491,54 +1513,31 @@ def save_objects_by_armature(
         for obj in bone_children:
             if skip_disabled_render and obj.hide_render:
                 continue
-            # attach point empty marker
-            if obj.type == "EMPTY":
+            
+            child_element = generate_element(
+                obj,
+                skip_disabled_render=skip_disabled_render,
+                parent=None,
+                armature=None,
+                bone_hierarchy=None,
+                is_bone_child=True,
+                groups=groups,
+                model_colors=model_colors,
+                model_textures=model_textures,
+                parent_matrix_world=mat_world,
+                parent_cube_origin=cube_origin,
+                parent_rotation_origin=rotation_origin,
+                parent_rotation_90deg=mat_bone_rot_90deg,
+                export_uvs=export_uvs,
+                export_generated_texture=export_generated_texture,
+                texture_size_x_override=texture_size_x_override,
+                texture_size_y_override=texture_size_y_override,
+            )
+            if child_element is not None:
                 if obj.name.startswith("attach_"):
-                    attachpoint_element = generate_attach_point(
-                        obj,
-                        parent=None,
-                        armature=None,
-                        parent_matrix_world=mat_world,
-                        parent_cube_origin=cube_origin,
-                        parent_rotation_origin=rotation_origin,
-                        parent_rotation_90deg=mat_bone_rot_90deg,
-                    )
-                    if attachpoint_element is not None:
-                        attachpoints.append(attachpoint_element)
-                elif obj.name.startswith("dummy_"):
-                    dummy_element = generate_dummy_element(
-                        obj,
-                        parent=None,
-                        armature=None,
-                        parent_matrix_world=mat_world,
-                        parent_cube_origin=cube_origin,
-                        parent_rotation_origin=rotation_origin,
-                        parent_rotation_90deg=mat_bone_rot_90deg,
-                    )
-                    if dummy_element is not None:
-                        bone_element["children"].append(dummy_element)
-            else: # assume normal mesh
-                obj_element = generate_element(
-                    obj,
-                    skip_disabled_render=skip_disabled_render,
-                    parent=None,
-                    armature=None,
-                    bone_hierarchy=None,
-                    is_bone_child=True,
-                    groups=groups,
-                    model_colors=model_colors,
-                    model_textures=model_textures,
-                    parent_matrix_world=mat_world,
-                    parent_cube_origin=cube_origin,
-                    parent_rotation_origin=rotation_origin,
-                    parent_rotation_90deg=mat_bone_rot_90deg,
-                    export_uvs=export_uvs,
-                    export_generated_texture=export_generated_texture,
-                    texture_size_x_override=texture_size_x_override,
-                    texture_size_y_override=texture_size_y_override,
-                )
-                if obj_element is not None:
-                    bone_element["children"].append(obj_element)
+                    attachpoints.append(child_element)
+                else:
+                    bone_element["children"].append(child_element)
         
         if len(attachpoints) > 0:
             bone_element["attachmentpoints"] = attachpoints
@@ -1728,7 +1727,7 @@ def save_objects(
         for obj in export_objects:
             if skip_disabled_render and obj.hide_render:
                 continue
-
+            
             element = generate_element(
                 obj,
                 skip_disabled_render=skip_disabled_render,
@@ -1746,7 +1745,10 @@ def save_objects(
                 texture_size_y_override=texture_size_y_override,
             )
             if element is not None:
-                root_elements.append(element)
+                if obj.name.startswith("attach_"):
+                    continue # skip root attach points
+                else:
+                    root_elements.append(element)
     
     # ===========================
     # generate color texture image
