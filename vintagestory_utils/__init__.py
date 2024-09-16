@@ -209,11 +209,21 @@ class VINTAGESTORY_PT_panel_animation_tools(bpy.types.Panel):
         if not draw_custom_prop(layout, rna_item, context_member, self._property_type, str, "StepParentName"):
             layout.label(text="")
 
+        layout.row().separator()
+
+        # operator: assign rename on export name to selected objects
+        layout.operator(
+            operator="vintagestory.assign_rename",
+            icon="GREASEPENCIL",
+            text="Rename on Export",
+        )
+
+        
         # rename object property
         row = layout.row()
         row.label(text="Rename on Export:")
         
-        if not draw_custom_prop(layout, rna_item, context_member, self._property_type, str, "Rename"):
+        if not draw_custom_prop(layout, rna_item, context_member, self._property_type, str, "rename"):
             layout.label(text="")
 
         
@@ -233,6 +243,7 @@ classes = [
     animation.OpMakeBonesXZY,
     animation.OpAssignBones,
     animation.OpAssignStepParentName,
+    animation.OpAssignRename,
     uv.OpUVCuboidUnwrap,
     uv.OpUVPixelUnwrap,
     uv.OpUVPackSimpleBoundingBox,

@@ -899,8 +899,12 @@ def generate_mesh_element(
     # ================================
     # build element
     # ================================
+    export_name = obj_name
+    if "rename" in obj and isinstance(obj["rename"], str):
+        export_name = obj["rename"]
+    
     new_element = {
-        "name": obj_name,
+        "name": export_name,
         "from": v_from,
         "to": v_to,
         "rotationOrigin": rotation_origin,
@@ -998,8 +1002,12 @@ def generate_attach_point(
     # translate to vintage story coord space
     rotation_origin = origin - parent_cube_origin + parent_rotation_origin
 
+    export_name = name
+    if "rename" in obj and isinstance(obj["rename"], str):
+        export_name = obj["rename"]
+    
     return {
-        "code": name,
+        "code": export_name,
         "posX": rotation_origin[0],
         "posY": rotation_origin[1],
         "posZ": rotation_origin[2],
@@ -1097,8 +1105,12 @@ def generate_dummy_element(
     # translate to vintage story coord space
     loc = origin - parent_cube_origin + parent_rotation_origin
 
+    export_name = name
+    if "rename" in obj and isinstance(obj["rename"], str):
+        export_name = obj["rename"]
+    
     element = {
-        "name": name,
+        "name": export_name,
         "from": loc,
         "to": loc, 
         "rotationOrigin": loc,

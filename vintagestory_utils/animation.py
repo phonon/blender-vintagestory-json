@@ -188,3 +188,44 @@ class OpAssignStepParentName(bpy.types.Operator):
                 region.tag_redraw()
 
         return {"FINISHED"}
+
+
+class OpAssignRename(bpy.types.Operator):
+    """Assign Rename custom property to object."""
+    bl_idname = "vintagestory.assign_rename"
+    bl_label = "Rename on Export"
+    bl_options = {"REGISTER", "UNDO"}
+
+    rename: bpy.props.StringProperty(
+        name="rename",
+        description="Rename on export new name",
+    )
+
+    def invoke(self, context, event):
+        wm = context.window_manager
+        return wm.invoke_props_dialog(self)
+
+    def execute(self, context):
+        args = self.as_keywords()
+
+        # unpack args
+        name = args.get("rename")
+
+        if name is None:
+            self.report({"ERROR"}, "No name provided")
+            return {"FINISHED"}
+        
+        if len(bpy.context.selected_objects) == 0:
+            self.report({"ERROR"}, "No objects selected")
+            return {"FINISHED"}
+
+        # add "StepParentName" custom StringProperty to selected objects
+        for obj in bpy.context.selected_objects:
+            obj["rename"] = name
+        
+        # refresh n panel
+        for region in context.area.regions:
+            if region.type == "UI":
+                region.tag_redraw()
+
+        return {"FINISHED"}
