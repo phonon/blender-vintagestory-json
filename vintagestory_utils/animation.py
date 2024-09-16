@@ -182,4 +182,9 @@ class OpAssignStepParentName(bpy.types.Operator):
         for obj in bpy.context.selected_objects:
             obj["StepParentName"] = name
         
+        # refresh n panel
+        for region in context.area.regions:
+            if region.type == "UI":
+                region.tag_redraw()
+
         return {"FINISHED"}
