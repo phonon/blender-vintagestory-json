@@ -91,7 +91,6 @@ def get_empty_principle_bsdf():
     # If a face is not defined the material should be considered not to have the same material as other faces!
     # There is no UV coordinates setup, so best looks is that we simply ignore there in Blender. for that we need a material
     if VS_NO_MATERIAL not in bpy.data.materials:
-        print("CREATING NEW MATERIALS")
         empty = bpy.data.materials.new(VS_NO_MATERIAL)
         empty.use_nodes = True
         bsdf = empty.node_tree.nodes.get("Principled BSDF") 
@@ -100,35 +99,50 @@ def get_empty_principle_bsdf():
     return bpy.data.materials[VS_NO_MATERIAL]
 
 
+def create_principled_bsdf(mat_name):
+    """ Create a new material without any texture connected """
+    if mat_name not in bpy.data.materials:
+        placeholder = bpy.data.materials.new(mat_name)
+        placeholder.use_nodes = True
+
+    return bpy.data.materials[mat_name] 
+
+
 def create_textured_principled_bsdf(mat_name, tex_path):
-    """Create new material with `mat_name` and texture path `tex_path`
-    """
-    mat = bpy.data.materials.new(mat_name)
-    mat.use_nodes = True
-    node_tree = mat.node_tree
-    nodes = node_tree.nodes
-    bsdf = nodes.get("Principled BSDF") 
+    """Create new material with `mat_name` and texture path `tex_path` """
 
-    # add texture node
-    if bsdf is not None:
-        if "Base Color" in bsdf.inputs:
-            tex_input = nodes.new(type="ShaderNodeTexImage")
-            tex_input.interpolation = "Closest"
+    if (mat_name in bpy.data.materials):
+        mat = bpy.data.materials[mat_name]
+    else: 
+        mat = bpy.data.materials.new(mat_name)
 
-            # load image, if fail make a new image with filepath set to tex path
-            try:
-                img = bpy.data.images.load(tex_path, check_existing=True)
-            except:
-                print("FAILED TO LOAD IMAGE:", tex_path)
-                img = bpy.data.images.new(os.path.split(tex_path)[-1], width=16, height=16)
-                img.filepath = tex_path
-        
-            tex_input.image = img
-            node_tree.links.new(tex_input.outputs[0], bsdf.inputs["Base Color"])
-        
-        # disable shininess
-        if "Specular" in bsdf.inputs:
-            bsdf.inputs["Specular"].default_value = 0.0
+    if mat.use_nodes == False:
+        mat.use_nodes = True
+        node_tree = mat.node_tree
+        nodes = node_tree.nodes
+        bsdf = nodes.get("Principled BSDF") 
+
+        # add texture node
+        if bsdf is not None:
+            if "Base Color" in bsdf.inputs:
+                tex_input = nodes.new(type="ShaderNodeTexImage")
+                tex_input.interpolation = "Closest"
+
+                # load image, if fail make a new image with filepath set to tex path
+                try:
+                    img = bpy.data.images.load(tex_path, check_existing=True)
+                except:
+                    print("FAILED TO LOAD IMAGE:", tex_path)
+                    img = bpy.data.images.new(os.path.split(tex_path)[-1], width=16, height=16)
+                    img.filepath = tex_path
+            
+                tex_input.image = img
+                node_tree.links.new(tex_input.outputs[0], bsdf.inputs["Base Color"])
+                node_tree.links.new(tex_input.outputs[1], bsdf.inputs["Alpha"]) #  We also want the alpha to be bound to not confuse the end user.
+            
+            # disable shininess
+            if "Specular" in bsdf.inputs:
+                bsdf.inputs["Specular"].default_value = 0.0
     
     return mat
 
@@ -222,6 +236,16 @@ def parse_element(
     mesh.vertices[6].co[:] = v_max[0], v_max[1], v_min[2]
     mesh.vertices[7].co[:] = v_max[0], v_max[1], v_max[2]
 
+    # helper to set materials without extending the code
+    def set_material(obj, textures, mesh_materials, tex_name, face):
+        if tex_name in mesh_materials:
+            face.material_index = mesh_materials[tex_name]
+        elif tex_name in textures:
+            idx = len(obj.data.materials)
+            obj.data.materials.append(textures[tex_name])
+            mesh_materials[tex_name] = idx
+            face.material_index = idx
+
     # set face uvs
     uv = e.get("faces")
     if uv is not None:
@@ -290,25 +314,14 @@ def parse_element(
                         uv_layer[k+3].uv[0:2] = xmin, ymin
 
                     # assign material
-                    if "texture" in face_uv:
+                    if ( ("enabled" in face_uv and face_uv["enabled"] is False)):
+                        set_material(obj, textures, mesh_materials, VS_NO_MATERIAL, face)
+                    elif "texture" in face_uv:
                         tex_name = face_uv["texture"][1:] # remove the "#" in start
-                        if tex_name in mesh_materials:
-                            face.material_index = mesh_materials[tex_name]
-                        elif tex_name in textures: # need new mapping
-                            idx = len(obj.data.materials)
-                            obj.data.materials.append(textures[tex_name])
-                            mesh_materials[tex_name] = idx
-                            face.material_index = idx
-                else:
-                    if VS_NO_MATERIAL in mesh_materials:
-                        face.material_index = mesh_materials[VS_NO_MATERIAL]
-                    elif VS_NO_MATERIAL in textures: # need new mapping
-                        idx = len(obj.data.materials)
-                        obj.data.materials.append(textures[VS_NO_MATERIAL])
-                        mesh_materials[VS_NO_MATERIAL] = idx
-                        face.material_index = idx
+                        set_material(obj, textures, mesh_materials, tex_name, face)
 
-                    face.material_index = mesh_materials[VS_NO_MATERIAL]
+                else:
+                    set_material(obj, textures, mesh_materials, VS_NO_MATERIAL, face)
 
     # set name (choose whatever is available or "cube" if no name or comment is given)
     obj.name = e.get("name") or "cube"
@@ -757,14 +770,18 @@ def load(context,
     tex_width = data["textureWidth"] if "textureWidth" in data else 16.0
     tex_height = data["textureHeight"] if "textureHeight" in data else 16.0
     textures = {}
+
+    textures[VS_NO_MATERIAL] = get_empty_principle_bsdf()
     
     if import_textures and "textures" in data:
         # create based line empty material for when something is -not- defined
-        textures[VS_NO_MATERIAL] = get_empty_principle_bsdf()
 
         # get textures base path for models
         tex_base_path = get_base_path(filepath_parts, curr_branch="shapes", new_branch="textures")
 
+        for tex_name, _ in data["textureSizes"].items():
+            textures[tex_name] = create_principled_bsdf(tex_name)
+        
         # load texture images
         for tex_name, tex_path in data["textures"].items():
             # skip aliases
@@ -784,7 +801,7 @@ def load(context,
                 tex_path = tex_path[1:]
                 if tex_path in textures:
                     textures[tex_name] = textures[tex_path]
-    
+
     # =============================================
     # recursively import geometry, uvs
     # =============================================

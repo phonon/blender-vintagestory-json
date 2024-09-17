@@ -13,6 +13,7 @@ import importlib
 importlib.reload(animation)
 
 VS_NO_MATERIAL = "VS_NO_MATERIAL"
+
 # convert deg to rad
 DEG_TO_RAD = math.pi / 180.0
 RAD_TO_DEG = 180.0 / math.pi
