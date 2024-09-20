@@ -209,6 +209,20 @@ class VINTAGESTORY_PT_panel_animation_tools(bpy.types.Panel):
         if not draw_custom_prop(layout, rna_item, context_member, self._property_type, str, "StepParentName"):
             layout.label(text="")
 
+        # operator: assign step parent constraint to selected objects
+        layout.operator(
+            operator="vintagestory.assign_step_parent_constraint",
+            icon="CON_CHILDOF",
+            text="Assign Step Parent Constraint",
+        )
+        
+        # operator: assign step parent constraint to selected objects
+        layout.operator(
+            operator="vintagestory.remove_step_parent_constraint",
+            icon="CON_LOCKTRACK",
+            text="Remove Step Parent Constraint",
+        )
+        
         layout.row().separator()
 
         # operator: assign rename on export name to selected objects
@@ -218,7 +232,6 @@ class VINTAGESTORY_PT_panel_animation_tools(bpy.types.Panel):
             text="Rename on Export",
         )
 
-        
         # rename object property
         row = layout.row()
         row.label(text="Rename on Export:")
@@ -243,6 +256,8 @@ classes = [
     animation.OpMakeBonesXZY,
     animation.OpAssignBones,
     animation.OpAssignStepParentName,
+    animation.OpAssignStepParentConstraint,
+    animation.OpRemoveStepParentConstraint,
     animation.OpAssignRename,
     uv.OpUVCuboidUnwrap,
     uv.OpUVPixelUnwrap,

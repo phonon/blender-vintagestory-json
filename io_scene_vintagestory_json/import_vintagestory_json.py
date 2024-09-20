@@ -289,19 +289,22 @@ def parse_element(
     # set name (choose whatever is available or "cube" if no name or comment is given)
     obj.name = e.get("name") or "cube"
 
-    # If Object has stepParentName definition, lets try to find and bind the object without using direct blender parent hiearchy
+    # If Object has stepParentName definition, lets try to find and bind the
+    # object without using direct blender parent hierarchy.
     # This allows to one to keep the related objects separate from the main
     # Now if we only could get the offsets right when doing bindings.
     if "stepParentName" in e:
-        obj["StepParentName"] = e.get("stepParentName")
+        step_parent_name = e.get("stepParentName")
+        obj["StepParentName"] = step_parent_name
+        
         # Deselect everything in preperation of constraints
-        bpy.ops.object.select_all(action='DESELECT')
+        bpy.ops.object.select_all(action="DESELECT")
 
         # Scene has an object similar to the step parent name
         if obj["StepParentName"] in bpy.data.objects:
             bpy.context.view_layer.objects.active = obj
             # add constraint to make the object a virtual child of the object
-            bpy.ops.object.constraint_add(type='CHILD_OF')
+            bpy.ops.object.constraint_add(type="CHILD_OF")
             # set target of constraint
             obj.constraints["Child Of"].target = bpy.data.objects[obj["StepParentName"]]
             # Clear Inverse for location

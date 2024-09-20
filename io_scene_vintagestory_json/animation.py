@@ -65,22 +65,6 @@ EULER_ALTERNATIVES = np.array([
     [-360.0, -360.0, -360.0],
 ])
 
-def to_vintagestory_rotation(euler):
-    """Convert blender space rotation to VS space:
-    VS space XYZ euler is blender space XZY euler,
-    so convert euler order, then rename axes
-        X -> Z
-        Y -> X
-        Z -> Y
-    Inputs:
-    - euler: Blender euler rotation
-    """
-    r = euler.to_quaternion().to_euler("XZY")
-    return Euler((
-        r.y,
-        r.z,
-        r.x,
-    ))
 
 class FcurveRotationMatrixCache():
     """Cache of rotation matrices at given frames sampled from fcurves

@@ -156,7 +156,7 @@ class OpAssignStepParentName(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     step_parent_name: bpy.props.StringProperty(
-        name="StepParentName",
+        name="Step Parent Name",
         description="Step parent name to add",
     )
 
@@ -186,6 +186,87 @@ class OpAssignStepParentName(bpy.types.Operator):
         for region in context.area.regions:
             if region.type == "UI":
                 region.tag_redraw()
+
+        return {"FINISHED"}
+
+
+class OpAssignStepParentConstraint(bpy.types.Operator):
+    """From object's StepParentName property, assign a 'Child Of'
+    constraint to the object to set it as virtual child of the step
+    parent object.
+    """
+    bl_idname = "vintagestory.assign_step_parent_constraint"
+    bl_label = "Assign Step Parent Constraint"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        if len(bpy.context.selected_objects) == 0:
+            self.report({"ERROR"}, "No objects selected")
+            return {"FINISHED"}
+        
+        for obj in bpy.context.selected_objects:
+            # get step parent name
+            step_parent_name = obj.get("StepParentName")
+            if step_parent_name is None:
+                self.report({"ERROR"}, "No StepParentName property found")
+                continue
+
+            if step_parent_name.startswith("b_"):
+                found_bone = False
+                # find armature with bone name
+                for armature in bpy.data.objects:
+                    if not isinstance(armature.data, bpy.types.Armature):
+                        continue
+                    # search for bone with name
+                    bone = armature.data.bones.get(step_parent_name[2:])
+                    if bone is None:
+                        continue
+                    found_bone = True
+                    # add constraint to make the object a virtual child of the object
+                    if "Child Of" in obj.constraints:
+                        constraint = obj.constraints["Child Of"]
+                    else:
+                        constraint = obj.constraints.new("CHILD_OF")
+                    # set target of constraint
+                    constraint.target = armature
+                    constraint.subtarget = bone.name
+                    # set inverse matrix to bone
+                    # https://blenderartists.org/t/set-inverse-child-of-constraints-via-python/1133914/4
+                    constraint.inverse_matrix = armature.matrix_world @ bone.matrix_local.inverted()
+                    break
+                if not found_bone:
+                    self.report({"ERROR"}, f"Step parent bone {step_parent_name[2:]} not found")
+            # else, try find scene object similar with step parent name
+            elif obj["StepParentName"] in bpy.data.objects:
+                # add constraint to make the object a virtual child of the object
+                if "Child Of" in obj.constraints:
+                    constraint = obj.constraints["Child Of"]
+                else:
+                    constraint = obj.constraints.new("CHILD_OF")
+                # set target of constraint
+                target = bpy.data.objects[obj["StepParentName"]]
+                # set target and inverse matrix to target
+                constraint.target = target
+                constraint.inverse_matrix = target.matrix_world.inverted()
+
+        return {"FINISHED"}
+
+
+class OpRemoveStepParentConstraint(bpy.types.Operator):
+    """Wrapper around removing 'Child Of' from selected objects"""
+    bl_idname = "vintagestory.remove_step_parent_constraint"
+    bl_label = "Remove Step Parent Constraint"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        if len(bpy.context.selected_objects) == 0:
+            self.report({"ERROR"}, "No objects selected")
+            return {"FINISHED"}
+        
+        for obj in bpy.context.selected_objects:
+            # remove "Child Of" constraint
+            if "Child Of" in obj.constraints:
+                obj.constraints.remove(obj.constraints["Child Of"])
 
         return {"FINISHED"}
 
