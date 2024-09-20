@@ -289,6 +289,27 @@ def parse_element(
     # set name (choose whatever is available or "cube" if no name or comment is given)
     obj.name = e.get("name") or "cube"
 
+    # If Object has stepParentName definition, lets try to find and bind the object without using direct blender parent hiearchy
+    # This allows to one to keep the related objects separate from the main
+    # Now if we only could get the offsets right when doing bindings.
+    if "stepParentName" in e:
+        obj["StepParentName"] = e.get("stepParentName")
+        # Deselect everything in preperation of constraints
+        bpy.ops.object.select_all(action='DESELECT')
+
+        # Scene has an object similar to the step parent name
+        if obj["StepParentName"] in bpy.data.objects:
+            bpy.context.view_layer.objects.active = obj
+            # add constraint to make the object a virtual child of the object
+            bpy.ops.object.constraint_add(type='CHILD_OF')
+            # set target of constraint
+            obj.constraints["Child Of"].target = bpy.data.objects[obj["StepParentName"]]
+            # Clear Inverse for location
+            bpy.ops.constraint.childof_clear_inverse(constraint="Child Of", owner="OBJECT")
+            ## TODO: Possible add another temporary offset here.
+
+        
+
     return obj, v_min, new_cube_origin, new_rotation_origin
 
 
@@ -600,6 +621,7 @@ def load_element(
     stats=None,
 ):
     """Recursively load a geometry cuboid"""
+
     obj, local_cube_origin, new_cube_origin, new_rotation_origin = parse_element(
         element,
         cube_origin,
@@ -761,6 +783,7 @@ def load(context,
     # recursively import geometry, uvs
     # =============================================
     root_origin = np.array([0.0, 0.0, 0.0])
+
     root_elements = data["elements"]
     for e in root_elements:
         obj = load_element(
