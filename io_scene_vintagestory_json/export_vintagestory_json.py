@@ -1098,12 +1098,16 @@ def generate_dummy_element(
         mat_rotation_90deg = np.array(parent_rotation_90deg) # needs to be in numpy format for numpy_matrix @ numpy_array
         origin = mat_rotation_90deg @ origin
 
+
     # change axis to vintage story y-up axis
     origin = to_y_up(origin)
     rotation = to_vintagestory_rotation(obj_rotation)
     
     # translate to vintage story coord space
     loc = origin - parent_cube_origin + parent_rotation_origin
+
+    # get scale
+    scale = to_y_up(obj.scale)
 
     export_name = name
     if "rename" in obj and isinstance(obj["rename"], str):
@@ -1128,7 +1132,14 @@ def generate_dummy_element(
         "children": [],
     }
 
-    # optional properties
+    # optional properties:
+
+    # scale
+    for (idx, axis) in enumerate(["scaleX", "scaleY", "scaleZ"]):
+        if scale[idx] != 1.0:
+            element[axis] = scale[idx]
+
+    # step parent
     if "StepParentName" in obj and len(obj["StepParentName"]) > 0:
         element["stepParentName"] = obj["StepParentName"]
 
