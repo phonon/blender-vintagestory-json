@@ -208,7 +208,7 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
         max=16,
         soft_min=-1,
         soft_max=16,
-        default=8,
+        default=-1,
     )
 
     # ================================

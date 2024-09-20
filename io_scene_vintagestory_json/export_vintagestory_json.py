@@ -1603,7 +1603,7 @@ def save_objects(
     color_texture_filename="",
     export_uvs=True,
     minify=False,
-    decimal_precision=1, #  Should be atleast similar to VSMC for defaults. We are UNLIKELY by default to have anyone need astronomical or mm precision for animations by default.
+    decimal_precision=-1,
     export_armature=True,
     export_animations=True,
     use_main_object_as_bone=True,
@@ -1916,17 +1916,17 @@ def save_objects(
     indent = 2
     if minify == True:
         # remove json indent + newline
-        indent= None
+        indent = None
 
-    parameters_to_round = ["offsetX", "offsetY", "offsetZ", "rotationX", "rotationY", "rotationZ"]
     # go through json dict and replace all float with rounded strings
     if decimal_precision >= 0:
+        parameters_to_round = ("offsetX", "offsetY", "offsetZ", "rotationX", "rotationY", "rotationZ")
 
         def normalize(d):
             if minify == True: # remove trailing .0 as extreme minify
                 if isinstance(d, int):
                     return d
-                if isinstance(d,float) and d.is_integer():
+                if isinstance(d, float) and d.is_integer():
                     return int(d)
             return d
 
