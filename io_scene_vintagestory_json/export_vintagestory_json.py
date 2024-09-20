@@ -44,23 +44,23 @@ DIRECTION_NORMALS = np.array([
 # blender counterclockwise uv -> minecraft uv rotation lookup table
 # (these values experimentally determined)
 # access using [uv_loop_start_index][vert_loop_start_index]
-COUNTERCLOCKWISE_UV_ROTATION_LOOKUP = [
-    [0, 270, 180, 90],
-    [90, 0, 270, 180],
-    [180, 90, 0, 270],
-    [270, 180, 90, 0],
-]
+COUNTERCLOCKWISE_UV_ROTATION_LOOKUP = (
+    (0, 270, 180, 90),
+    (90, 0, 270, 180),
+    (180, 90, 0, 270),
+    (270, 180, 90, 0),
+)
 
 # blender clockwise uv -> minecraft uv rotation lookup table
 # (these values experimentally determined)
 # access using [uv_loop_start_index][vert_loop_start_index]
 # Note: minecraft uv must also be x-flipped
-CLOCKWISE_UV_ROTATION_LOOKUP = [
-    [90, 0, 270, 180],
-    [0, 270, 180, 90],
-    [270, 180, 90, 0],
-    [180, 90, 0, 270],
-]
+CLOCKWISE_UV_ROTATION_LOOKUP = (
+    (90, 0, 270, 180),
+    (0, 270, 180, 90),
+    (270, 180, 90, 0),
+    (180, 90, 0, 270),
+)
 
 # maps a PoseBone rotation mode name to the proper
 # action Fcurve property type
