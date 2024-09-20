@@ -5,7 +5,7 @@ import math
 import time
 from math import inf
 import bpy
-from mathutils import Vector, Euler, Quaternion
+from mathutils import Vector, Euler, Quaternion, Matrix
 from . import animation
 
 import importlib
@@ -289,29 +289,9 @@ def parse_element(
     # set name (choose whatever is available or "cube" if no name or comment is given)
     obj.name = e.get("name") or "cube"
 
-    # If Object has stepParentName definition, lets try to find and bind the
-    # object without using direct blender parent hierarchy.
-    # This allows to one to keep the related objects separate from the main
-    # Now if we only could get the offsets right when doing bindings.
+    # assign step parent name
     if "stepParentName" in e:
-        step_parent_name = e.get("stepParentName")
-        obj["StepParentName"] = step_parent_name
-        
-        # Deselect everything in preperation of constraints
-        bpy.ops.object.select_all(action="DESELECT")
-
-        # Scene has an object similar to the step parent name
-        if obj["StepParentName"] in bpy.data.objects:
-            bpy.context.view_layer.objects.active = obj
-            # add constraint to make the object a virtual child of the object
-            bpy.ops.object.constraint_add(type="CHILD_OF")
-            # set target of constraint
-            obj.constraints["Child Of"].target = bpy.data.objects[obj["StepParentName"]]
-            # Clear Inverse for location
-            bpy.ops.constraint.childof_clear_inverse(constraint="Child Of", owner="OBJECT")
-            ## TODO: Possible add another temporary offset here.
-
-        
+        obj["StepParentName"] = e.get("stepParentName")
 
     return obj, v_min, new_cube_origin, new_rotation_origin
 
@@ -834,6 +814,54 @@ def load(context,
     elif translate_origin is not None:
         for obj in root_objects:
             obj.location = obj.location + translate_origin
+    
+    # generate step parent constraints for root objects:
+    # if Object has stepParentName definition, try to find and bind the
+    # object without using direct blender parent hierarchy.
+    for obj in root_objects:
+        if "StepParentName" not in obj:
+            continue
+
+        step_parent_name = obj["StepParentName"]
+        
+        # first search for step parent bone inside armatures
+        found = False
+        for armature in bpy.data.objects:
+            if not isinstance(armature.data, bpy.types.Armature):
+                continue
+
+            # search for bone with name
+            if step_parent_name.startswith("b_"):
+                bone = armature.data.bones.get(step_parent_name[2:])
+            else:
+                bone = armature.data.bones.get(step_parent_name)
+            if bone is None:
+                continue
+
+            found = True
+
+            # transform object back to bone
+            obj.matrix_world = bone.matrix_local @ obj.matrix_world
+
+            # add constraint to make the object a virtual child of the object
+            constraint = obj.constraints.new("CHILD_OF")
+            constraint.target = armature
+            constraint.subtarget = bone.name
+            # set inverse matrix to bone
+            # https://blenderartists.org/t/set-inverse-child-of-constraints-via-python/1133914/4
+            constraint.inverse_matrix = armature.matrix_world @ bone.matrix_local.inverted()
+            break
+        if found:
+            continue
+
+        # else, search for step parent object in scene
+        if step_parent_name in bpy.data.objects:
+            target = bpy.data.objects[step_parent_name]
+            constraint = obj.constraints.new("CHILD_OF")
+            constraint.target = target
+            # clear inverse so constraint puts obj on target
+            constraint.inverse_matrix = Matrix.Identity(4)
+            # TODO: idk right way to offset object to parent and constraint here
 
     # import groups as collections
     for g in groups:
