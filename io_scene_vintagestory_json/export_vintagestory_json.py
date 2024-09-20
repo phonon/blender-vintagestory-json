@@ -1603,7 +1603,7 @@ def save_objects(
     color_texture_filename="",
     export_uvs=True,
     minify=False,
-    decimal_precision=-1,
+    decimal_precision=1, #  Should be atleast similar to VSMC for defaults. We are UNLIKELY by default to have anyone need astronomical or mm precision for animations by default.
     export_armature=True,
     export_animations=True,
     use_main_object_as_bone=True,
@@ -1642,8 +1642,7 @@ def save_objects(
     - minify:
         Minimize output file size (write into single line, remove spaces, ...)
     - decimal_precision:
-        Number of digits after decimal to keep in numbers. Requires
-        `minify = True`. Set to -1 to disable.
+        Number of digits after decimal to keep in numbers. Set to -1 to disable.
     - export_armature:
         Export by bones, makes custom hierarchy based on bone tree and
         attaches generated elements to their bone parent.
@@ -1919,23 +1918,59 @@ def save_objects(
         # remove json indent + newline
         indent= None
 
-        # go through json dict and replace all float with rounded strings
-        if decimal_precision >= 0:
-            def round_float(x):
-                return round(x, decimal_precision)
-            
-            def minify_element(elem):
-                elem["from"] = [round_float(x) for x in elem["from"]]
-                elem["to"] = [round_float(x) for x in elem["to"]]
-                elem["rotationOrigin"] = [round_float(x) for x in elem["rotationOrigin"]]
-                for face in elem["faces"].values():
-                    face["uv"] = [round_float(x) for x in face["uv"]]
-                
-                for child in elem["children"]:
-                    minify_element(child)
+    parameters_to_round = ["offsetX", "offsetY", "offsetZ", "rotationX", "rotationY", "rotationZ"]
+    # go through json dict and replace all float with rounded strings
+    if decimal_precision >= 0:
 
-            for elem in model_json["elements"]:
-                minify_element(elem)
+        def normalize(d):
+            if minify == True: # remove trailing .0 as extreme minify
+                if isinstance(d, int):
+                    return d
+                if isinstance(d,float) and d.is_integer():
+                    return int(d)
+            return d
+
+
+        def round_float(x):
+            value = round(x, decimal_precision)
+            return normalize(value)
+        
+
+        def minify_element(elem):
+            elem["from"] = [round_float(x) for x in elem["from"]]
+            elem["to"] = [round_float(x) for x in elem["to"]]
+            elem["rotationOrigin"] = [round_float(x) for x in elem["rotationOrigin"]]
+            
+            for param in parameters_to_round:
+                if param in elem:
+                    elem[param] = round_float(elem[param])
+
+            for face in elem["faces"].values():
+                face["uv"] = [round_float(x) for x in face["uv"]]
+            
+            for child in elem["children"]:
+                minify_element(child)
+
+
+        def minify_frame(frame_elem):
+            for param in parameters_to_round:
+                if param in frame_elem:
+                    frame_elem[param] = round_float(frame_elem[param])
+
+
+        def minify_animations(anim):
+            for keyframe in anim["keyframes"]:
+                elements = keyframe["elements"]
+                for key in elements:
+                    minify_frame(elements[key])
+
+
+        for elem in model_json["elements"]:
+            minify_element(elem)
+
+        if "animations" in model_json:
+            for anim in model_json["animations"]:
+                minify_animations(anim)
     
     # save json
     with open(filepath, "w") as f:
