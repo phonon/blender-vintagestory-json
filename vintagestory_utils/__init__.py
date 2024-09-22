@@ -231,13 +231,17 @@ class VINTAGESTORY_PT_panel_animation_tools(bpy.types.Panel):
             icon="GREASEPENCIL",
             text="Rename on Export",
         )
-
         # rename object property
         row = layout.row()
         row.label(text="Rename on Export:")
         
         if not draw_custom_prop(layout, rna_item, context_member, self._property_type, str, "rename"):
             layout.label(text="")
+
+        row = layout.row()
+        row.operator(primitive.OpPrimitiveRenameDuplicateForSelected.bl_idname, icon="SORTALPHA")
+        row = layout.row()
+        row.operator(primitive.OpPrimitiveRemoveRenameOnExportForSelected.bl_idname, icon="CANCEL")
 
         
 def add_submenu(self, context):
@@ -253,6 +257,8 @@ classes = [
     primitive.OpPrimitiveAddHexadecagon,
     primitive.OpPrimitiveAddHexadecagonHollow,
     primitive.OpPrimitiveAddOctsphere,
+    primitive.OpPrimitiveRenameDuplicateForSelected,
+    primitive.OpPrimitiveRemoveRenameOnExportForSelected,
     animation.OpMakeBonesXZY,
     animation.OpAssignBones,
     animation.OpAssignStepParentName,
