@@ -508,13 +508,12 @@ class AnimationAdapter():
             -> For missing points, use fcurve.evaluate() to sample
             -> For missing fcurve, replace with a dummy fcurve with
                evaluate() that returns default value (0 location/rotation)
-        3. For all keyframes, apply 90 deg rotations from objects (TODO)
-        4. Convert location keyframe positions to VintageStory format:
+        3. Convert location keyframe positions to VintageStory format:
                 VintageStory: w = R(v + u)
                 Blender:      w = Rv + u'
             Where u' = R*u -> u = R^-1 * u'
-        5. Convert quaternion keyframes into euler keyframes
-        6. Make keyframes list, where each frame has list of elements
+        4. Convert quaternion keyframes into euler keyframes
+        5. Make keyframes list, where each frame has list of elements
             keyframes = [
                 {
                     frame: #,

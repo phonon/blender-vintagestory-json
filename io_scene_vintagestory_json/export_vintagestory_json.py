@@ -156,53 +156,6 @@ def clamp_rotation(r):
     return r
 
 
-def decompose_90deg_rotation(rotation):
-    """Remove 90 deg rotations from euler rotation R:
-    R = Rr * R90deg
-    Rr = R * R90deg^-1
-    where Rr is the residual rotation and R90deg are 90 degree rotations
-    """
-    residual_rotation = rotation.copy()
-    
-    # number of 90 degree steps
-    xsteps = 0
-    ysteps = 0
-    zsteps = 0
-    
-    # get sign of euler angles
-    rot_x_sign = sign(rotation.x)
-    rot_y_sign = sign(rotation.y)
-    rot_z_sign = sign(rotation.z)
-    
-    eps = 1e-6 # angle error range for floating point precision issues
-    
-    # included sign() in loop condition to prevent angle
-    # overflowing to other polarity
-    while abs(residual_rotation.x) > math.pi/2 - eps and sign(residual_rotation.x) == rot_x_sign:
-        angle = rot_x_sign * math.pi/2
-        residual_rotation.x -= angle
-        xsteps += rot_x_sign
-    while abs(residual_rotation.y) > math.pi/2 - eps and sign(residual_rotation.y) == rot_y_sign:
-        angle = rot_y_sign * math.pi/2
-        residual_rotation.y -= angle
-        ysteps += rot_y_sign
-    while abs(residual_rotation.z) > math.pi/4 - eps and sign(residual_rotation.z) == rot_z_sign:
-        angle = rot_z_sign * math.pi/2
-        residual_rotation.z -= angle
-        zsteps += rot_z_sign
-    
-    if xsteps != 0 or ysteps != 0 or zsteps != 0:
-        mat_rotation_90deg = Euler((xsteps * math.pi/2, ysteps * math.pi/2, zsteps * math.pi/2), "XYZ").to_matrix()
-    else:
-        mat_rotation_90deg = None
-    
-    # rotate euler axis by 90 deg rotations
-    if mat_rotation_90deg is not None:
-        residual_rotation = rotation.to_matrix() @ mat_rotation_90deg.inverted_safe()
-    
-    return residual_rotation, mat_rotation_90deg
-
-
 class TextureInfo():
     """Description of a texture, gives image source path and size
     """
@@ -423,7 +376,6 @@ def generate_mesh_element(
     parent_matrix_world=None,      # parent matrix world transform 
     parent_cube_origin=None,       # parent cube "from" origin (coords in VintageStory space)
     parent_rotation_origin=None,   # parent object rotation origin (coords in VintageStory space)
-    parent_rotation_90deg=None,    # parent 90 degree rotation matrix
     export_uvs=True,               # export uvs
     export_generated_texture=True,
     texture_size_x_override=None,  # override texture size x
@@ -501,7 +453,6 @@ def generate_mesh_element(
         parent_matrix_world = parent_bone.matrix_local.copy()
         parent_cube_origin = parent_bone.head
         parent_rotation_origin = parent_bone.head
-        parent_rotation_90deg = bone_hierarchy[bone_parent_name].mat_rotation_90deg
     else:
         print(f"WARNING: cannot find {obj.name} step parent bone {bone_parent_name}")
 
@@ -529,48 +480,6 @@ def generate_mesh_element(
     v_local = np.zeros((3, 8))
     for i, v in enumerate(mesh.vertices):
         v_local[0:3,i] = v.co
-    
-    # ================================
-    # apply parent 90 deg rotations
-    # ================================
-    if parent_rotation_90deg is not None:
-        # print(parent_rotation_90deg, v_local)
-        rot_90_deg = np.array(parent_rotation_90deg)
-        ax_angle, theta = obj_rotation.to_quaternion().to_axis_angle()
-        transformed_ax_angle = rot_90_deg @ ax_angle
-        obj_rotation = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
-        v_local = rot_90_deg @ v_local
-        origin = rot_90_deg @ origin
-    
-    # ================================
-    # constrain rotation to [-90, 90] by applying all further
-    # 90 deg rotations directly to vertices
-    # ================================
-    mat_rotate_90deg = None
-
-    if is_bone_child == False and step_parent_name is None: # TODO: temporary due to improper 90 deg rotation with bones
-        residual_rotation, mat_rotation_90deg = decompose_90deg_rotation(obj_rotation)
-        # print(residual_rotation, mat_rotation_90deg)
-        if mat_rotation_90deg is not None:
-            mat_rotate_90deg = np.array(mat_rotation_90deg)
-        
-            # rotate axis of residual rotation
-            # TODO: need to handle with armature, right now messes up rotation
-            # relative to bone
-            if armature is None:
-                obj_rotation = residual_rotation
-
-                # rotate mesh vertices
-                v_local = mat_rotate_90deg @ v_local
-    # else:
-    #     if bone_hierarchy is not None:
-    #         bone_rotation_90deg = bone_hierarchy[bone.parent].rotation_90deg
-    #         ax_angle, theta = obj_rotation.to_quaternion().to_axis_angle()
-    #         transformed_ax_angle = bone_rotation_90deg @ ax_angle
-    #         obj_rotation = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
-    #         v_local = bone_rotation_90deg @ v_local
-    #         origin = bone_rotation_90deg @ origin
-    
     
     # create output coords, rotation
     # get min/max for to/from points
@@ -633,14 +542,7 @@ def generate_mesh_element(
             break
 
         # stack + reshape to (6,3)
-        # face_normal = np.array(face.normal)
-        # face_normal_stacked = np.transpose(face_normal[..., np.newaxis], (1,0))
-        face_normal = face.normal
-        if parent_rotation_90deg is not None:
-            face_normal = parent_rotation_90deg @ face_normal
-        if mat_rotate_90deg is not None:
-            face_normal = mat_rotate_90deg @ face_normal
-        face_normal = np.array(face_normal)
+        face_normal = np.array(face.normal)
         face_normal_stacked = np.transpose(face_normal[..., np.newaxis], (1,0))
         face_normal_stacked = np.tile(face_normal_stacked, (6,1))
 
@@ -799,13 +701,6 @@ def generate_mesh_element(
     # ================================
     children = []
     attachpoints = []
-
-    # combine 90 deg rotation matrix for child
-    if mat_rotate_90deg is not None:
-        if parent_rotation_90deg is not None:
-            mat_rotate_90deg = mat_rotate_90deg @ parent_rotation_90deg
-    else:
-        mat_rotate_90deg = parent_rotation_90deg
     
     # parse direct children objects normally
     for child in obj.children:
@@ -824,7 +719,6 @@ def generate_mesh_element(
             parent_matrix_world=matrix_world,
             parent_cube_origin=cube_origin,
             parent_rotation_origin=rotation_origin,
-            parent_rotation_90deg=mat_rotate_90deg,
             export_uvs=export_uvs,
             texture_size_x_override=texture_size_x_override,
             texture_size_y_override=texture_size_y_override,
@@ -872,7 +766,6 @@ def generate_mesh_element(
                 parent_matrix_world=matrix_world,
                 parent_cube_origin=cube_origin,
                 parent_rotation_origin=rotation_origin,
-                parent_rotation_90deg=mat_rotate_90deg,
                 export_uvs=export_uvs,
                 texture_size_x_override=texture_size_x_override,
                 texture_size_y_override=texture_size_y_override,
@@ -934,7 +827,6 @@ def generate_attach_point(
     parent_matrix_world=None,      # parent matrix world transform
     parent_cube_origin=None,       # parent cube "from" origin (coords in VintageStory space)
     parent_rotation_origin=None,   # parent object rotation origin (coords in VintageStory space)
-    parent_rotation_90deg=None,    # parent 90 degree rotation matrix
     **kwargs,
 ):
     """Parse an attachment point
@@ -970,17 +862,6 @@ def generate_attach_point(
         mat_local = parent_matrix_world.inverted_safe() @ obj.matrix_world
         origin, quat, _ = mat_local.decompose()
         obj_rotation = quat.to_euler("XYZ")
-    
-    # ================================
-    # apply parent 90 deg rotations
-    # ================================
-    if parent_rotation_90deg is not None:
-        ax_angle, theta = obj_rotation.to_quaternion().to_axis_angle()
-        transformed_ax_angle = parent_rotation_90deg @ ax_angle
-        obj_rotation = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
-
-        mat_rotation_90deg = np.array(parent_rotation_90deg) # needs to be in numpy format for numpy_matrix @ numpy_array
-        origin = mat_rotation_90deg @ origin
 
     # change axis to vintage story y-up axis
     origin = to_y_up(origin)
@@ -1012,7 +893,6 @@ def generate_dummy_element(
     parent_matrix_world=None,      # parent matrix world transform
     parent_cube_origin=None,       # parent cube "from" origin (coords in VintageStory space)
     parent_rotation_origin=None,   # parent object rotation origin (coords in VintageStory space)
-    parent_rotation_90deg=None,    # parent 90 degree rotation matrix
     **kwargs,
 ):
     """Parse a "dummy" object. In Blender this is an object with
@@ -1061,9 +941,9 @@ def generate_dummy_element(
         parent_matrix_world = parent_bone.matrix_local.copy()
         parent_cube_origin = parent_bone.head
         parent_rotation_origin = parent_bone.head
-        parent_rotation_90deg = bone_hierarchy[bone_parent_name].mat_rotation_90deg
     else:
-        print(f"WARNING: cannot find {obj.name} step parent bone {bone_parent_name}")
+        if step_parent_name is not None:
+            print(f"WARNING: cannot find {obj.name} step parent bone {bone_parent_name}")
     
     # more robust but higher performance cost, just get relative
     # location/rotation from world matrices, required for complex
@@ -1073,18 +953,6 @@ def generate_dummy_element(
         mat_local = parent_matrix_world.inverted_safe() @ obj.matrix_world
         origin, quat, _ = mat_local.decompose()
         obj_rotation = quat.to_euler("XYZ")
-    
-    # ================================
-    # apply parent 90 deg rotations
-    # ================================
-    if parent_rotation_90deg is not None:
-        ax_angle, theta = obj_rotation.to_quaternion().to_axis_angle()
-        transformed_ax_angle = parent_rotation_90deg @ ax_angle
-        obj_rotation = Quaternion(transformed_ax_angle, theta).to_euler("XYZ")
-
-        mat_rotation_90deg = np.array(parent_rotation_90deg) # needs to be in numpy format for numpy_matrix @ numpy_array
-        origin = mat_rotation_90deg @ origin
-
 
     # change axis to vintage story y-up axis
     origin = to_y_up(origin)
@@ -1192,8 +1060,6 @@ class BoneNode():
         self.main = None                     # main object for this bone
         self.position = None                 # position
         self.rotation_residual = None        # rotation after removing 90 deg components
-        self.mat_rotation_90deg = None       # rot matrix with all 90 deg rotations
-        self.mat_world_rotation_90deg = None # accumulated 90 deg rotations
         self.creating_dummy_object = False   # if bone will create a new dummy object in output tree
                                              # used to decide if output bone name in animation keyframes
                                              # should be "{bone.name}" or "b_{bone.name}" (using dummy object)
@@ -1207,8 +1073,6 @@ class BoneNode():
         parent: {self.parent},
         position: {self.position},
         rotation_residual: {self.rotation_residual},
-        mat_rotation_90deg: {self.mat_rotation_90deg},
-        mat_world_rotation_90deg: {self.mat_world_rotation_90deg},
         children: {self.children} }}"""
 
 
@@ -1262,22 +1126,11 @@ def get_bone_hierarchy(armature, root_bones):
         if parent is not None:
             node.parent = parent.name
 
-        # decompose 90 deg rotations out
         mat_local = get_bone_relative_matrix(bone, bone.parent)
         bone_pos, bone_quat, _ = mat_local.decompose()
-
-        # bone_rot = bone_quat.to_euler("XYZ")
-        # node.rotation_residual, node.mat_rotation_90deg = decompose_90deg_rotation(bone_rot)
         
         node.position = bone_pos
         node.rotation_residual = bone_quat.to_matrix()
-        node.mat_rotation_90deg = Matrix.Identity(3)
-        
-        if node.mat_rotation_90deg is not None:
-            if parent is not None and parent.name in hierarchy and hierarchy[parent.name].mat_world_rotation_90deg is not None:
-                node.mat_world_rotation_90deg = node.mat_rotation_90deg @ hierarchy[parent.name].mat_world_rotation_90deg
-            else:
-                node.mat_world_rotation_90deg = node.mat_rotation_90deg
 
         for child in bone.children:
             get_bone_rotation(hierarchy, child, bone)
@@ -1314,13 +1167,6 @@ def get_bone_hierarchy_from_objects(
             break
     
     return armature, root_bones, bone_hierarchy
-
-def print_bone_hierarchy(hierarchy):
-    print("===========================================")
-    print("BONE HIERARCHY:")
-    for name, bone_node in hierarchy.items():
-        print(name, str(bone_node))
-    print("===========================================")
 
 
 # maps a PoseBone rotation mode name to the proper
@@ -1386,6 +1232,9 @@ def save_all_animations(
             on_animation_end=on_animation_end,
             animation_version_0=animation_version_0,
         )
+
+        # TODO: bake IKs?
+        # https://github.com/blender/blender/blob/main/scripts/modules/bpy_extras/anim_utils.py#L164
 
         # sort fcurves by bone
         for fcu in fcurves:
@@ -1507,9 +1356,6 @@ def save_objects_by_armature(
                 bone_children = bone_children[1:]
             else:
                 bone_children = []
-        
-        # insert object children of the bone object
-        mat_bone_rot_90deg = bone_node.mat_rotation_90deg if bone_node.mat_rotation_90deg is not None else None
 
         # main object could not be used, insert a dummy object with bone transform
         if bone_element is None:
@@ -1520,9 +1366,6 @@ def save_objects_by_armature(
             else:
                 mat_local = mat_world
             bone_loc, quat, _ = mat_local.decompose()
-            bone_rot = quat.to_euler("XYZ")
-            if bone.parent is not None:
-                bone_loc = bone_hierarchy[bone.parent.name].mat_rotation_90deg @ bone_loc
             
             bone_element = create_dummy_bone_object(bone.name, bone_loc, bone_node.rotation_residual)
         
@@ -1552,7 +1395,6 @@ def save_objects_by_armature(
                 parent_matrix_world=mat_world,
                 parent_cube_origin=cube_origin,
                 parent_rotation_origin=rotation_origin,
-                parent_rotation_90deg=mat_bone_rot_90deg,
                 export_uvs=export_uvs,
                 export_generated_texture=export_generated_texture,
                 texture_size_x_override=texture_size_x_override,
