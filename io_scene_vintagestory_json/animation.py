@@ -189,7 +189,7 @@ class KeyframeAdapter():
             }
 
         return keyframe["elements"][bone_name]
-    
+
 
     def add_location_keyframes(self, bone_name, frames, locations):
         """Add location keyframes, do conversion to y-up
@@ -199,6 +199,16 @@ class KeyframeAdapter():
             keyframe["offsetX"] = loc.y
             keyframe["offsetY"] = loc.z
             keyframe["offsetZ"] = loc.x
+
+
+    def add_scale_keyframes(self, bone_name, frames, scales):
+        """Add scale keyframes, do conversion to y-up
+        """
+        for frame, scale in zip(frames, scales):
+            keyframe = self.get_bone_keyframe(bone_name, frame)
+            keyframe["stretchX"] = scale.y
+            keyframe["stretchY"] = scale.z
+            keyframe["stretchZ"] = scale.x
 
 
     def add_rotation_keyframes(self, bone_name, frames, rotations, on_animation_end=""):
@@ -292,7 +302,6 @@ class KeyframeAdapter():
         prev_rz = 0
 
         for frame, rot in zip(frames, rotations):
-            # print("frame", frame)
             keyframe = self.get_bone_keyframe(bone_name, frame)
             rx = rot.y * RAD_TO_DEG
             ry = rot.z * RAD_TO_DEG
@@ -319,16 +328,6 @@ class KeyframeAdapter():
             keyframe_end["rotationY"] = keyframe_start["rotationY"]
             keyframe_end["rotationZ"] = keyframe_start["rotationZ"]
 
-        # for debugging
-        # if bone_name == "b_root":
-        #     for frame, rot in zip(frames, rotations):
-        #         keyframe = self.get_bone_keyframe(bone_name, frame)
-        #         print("[{}] rx={} ry={} rz={}".format(
-        #             frame,
-        #             keyframe["rotationX"],
-        #             keyframe["rotationY"],
-        #             keyframe["rotationZ"],
-        #         ))
 
 class AnimationAdapter():
     """Helper to create, cache, store/load fcurves and convert
@@ -470,9 +469,6 @@ class AnimationAdapter():
                     
                     rot_mat = fcu_rotation_cache.get(frame)
                     v = rot_mat @ Vector((vx, vy, vz))
-                    
-                    # debug
-                    # print(frame, "OLD => NEW:", vx, vy, vz, "=>", v.x, v.y, v.z)
 
                     fcu_x.keyframe_points[k].co = frame, v.x
                     fcu_y.keyframe_points[k].co = frame, v.y
@@ -537,6 +533,7 @@ class AnimationAdapter():
         for bone_name, rotation_mode in self.bone_rotation_mode.items():
             fcu_name_prefix = "pose.bones[\"{}\"]".format(bone_name)
             fcu_name_location = fcu_name_prefix + ".location"
+            fcu_name_scale = fcu_name_prefix + ".scale"
             if rotation_mode == "rotation_euler":
                 fcu_name_rotation = fcu_name_prefix + ".rotation_euler"
             else:
@@ -688,6 +685,30 @@ class AnimationAdapter():
                 
                 # handles conversion to y-up
                 keyframes.add_location_keyframes(output_bone_name, frames, location_keyframes)
+            
+            # =====================
+            # scale keyframes
+            # =====================
+            # only do for new animation version, dont want to deal with old version math
+            if fcu_name_scale in self.storage and not self.animation_version_0:
+                frames = self.get_all_frames(fcu_name_scale)
+
+                fcu_x = self.storage[fcu_name_scale][0] or DefaultKeyframeSampler(1.0)
+                fcu_y = self.storage[fcu_name_scale][1] or DefaultKeyframeSampler(1.0)
+                fcu_z = self.storage[fcu_name_scale][2] or DefaultKeyframeSampler(1.0)
+
+                scale_keyframes = []
+                for frame in frames:
+                    scale = Vector((
+                        fcu_x.evaluate(frame),
+                        fcu_y.evaluate(frame),
+                        fcu_z.evaluate(frame),
+                    ))
+                    
+                    scale_keyframes.append(scale)
+                
+                # handles conversion to y-up
+                keyframes.add_scale_keyframes(output_bone_name, frames, scale_keyframes)
 
         # convert keyframes map into a list of keyframes
         keyframes_list = keyframes.tolist()

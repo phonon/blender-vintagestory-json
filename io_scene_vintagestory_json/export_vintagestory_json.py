@@ -62,19 +62,6 @@ CLOCKWISE_UV_ROTATION_LOOKUP = (
     (180, 90, 0, 270),
 )
 
-# maps a PoseBone rotation mode name to the proper
-# action Fcurve property type
-ROTATION_MODE_TO_FCURVE_PROPERTY = {
-    "QUATERNION": "rotation_quaternion",
-    "XYZ": "rotation_euler",
-    "XZY": "rotation_euler",
-    "YXZ": "rotation_euler",
-    "YZX": "rotation_euler",
-    "ZXY": "rotation_euler",
-    "ZYX": "rotation_euler",
-    "AXIS_ANGLE": "rotation_euler", # ??? TODO: handle properly...
-}
-
 def filter_root_objects(objects):
     """Get root objects (objects without parents) in scene."""
     root_objects = []
@@ -1336,6 +1323,19 @@ def print_bone_hierarchy(hierarchy):
     print("===========================================")
 
 
+# maps a PoseBone rotation mode name to the proper
+# action Fcurve property type
+ROTATION_MODE_TO_FCURVE_PROPERTY = {
+    "QUATERNION": "rotation_quaternion",
+    "XYZ": "rotation_euler",
+    "XZY": "rotation_euler",
+    "YXZ": "rotation_euler",
+    "YZX": "rotation_euler",
+    "ZXY": "rotation_euler",
+    "ZYX": "rotation_euler",
+    "AXIS_ANGLE": "rotation_euler", # ??? TODO: handle properly...
+}
+
 def save_all_animations(
     bone_hierarchy,
     animation_version_0=False, # use old vintagestory animation version 0
@@ -1380,7 +1380,7 @@ def save_all_animations(
         
         # load keyframe data
         animation_adapter = animation.AnimationAdapter(
-            action,
+            action=action,
             name=action_name,
             armature=armature,
             on_animation_end=on_animation_end,
@@ -1390,14 +1390,14 @@ def save_all_animations(
         # sort fcurves by bone
         for fcu in fcurves:
             # read bone name in format: path.bones["name"].property
-            data_path = fcu.data_path
-            if not data_path.startswith("pose.bones"):
+            fcu_data_path = fcu.data_path
+            if not fcu_data_path.startswith("pose.bones"):
                 continue
             
             # read bone name
             idx_bone_name_start = 12                    # [" index
-            idx_bone_name_end = data_path.find("]", 12) # "] index
-            bone_name = data_path[idx_bone_name_start:idx_bone_name_end-1]
+            idx_bone_name_end = fcu_data_path.find("]", 12) # "] index
+            bone_name = fcu_data_path[idx_bone_name_start:idx_bone_name_end-1]
 
             # skip if bone not found
             if bone_name not in bones:
@@ -1408,18 +1408,20 @@ def save_all_animations(
             rotation_mode = bone.rotation_mode
 
             # match data_path property to export name
-            property_name = data_path[idx_bone_name_end+2:]
+            property_name = fcu_data_path[idx_bone_name_end+2:]
 
-            if property_name != "location":
-                # make sure rotation curve associated with proper rotation mode
-                # e.g. bone with XYZ euler mode should only use "rotation_euler" fcurve
-                #      since rotation_quaternion fcurves can still exist
+            # bone can have both euler and quaternion fcurves, so need to
+            # make sure this rotation curve matches the bone rotation mode
+            # being used...
+            # e.g. bone with XYZ euler mode should only use "rotation_euler" fcurve
+            #      since rotation_quaternion fcurves can still exist
+            if property_name == "rotation_euler" or property_name == "rotation_quaternion":
                 if ROTATION_MODE_TO_FCURVE_PROPERTY[rotation_mode] != property_name:
                     continue
 
             # add bone and fcurve to animation adapter
             animation_adapter.set_bone_rotation_mode(bone_name, ROTATION_MODE_TO_FCURVE_PROPERTY[rotation_mode])
-            animation_adapter.add_fcurve(fcu, data_path, fcu.array_index)
+            animation_adapter.add_fcurve(fcu, fcu_data_path, fcu.array_index)
 
         # convert from Blender bone format to Vintage story format
         keyframes = animation_adapter.create_vintage_story_keyframes(bone_hierarchy)
