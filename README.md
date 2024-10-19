@@ -26,9 +26,6 @@ Export Guide/Notes
   prisms (8 vertices and 6 faces). The local mesh coordinates must be
   aligned to global XYZ axis. **Do not rotate the mesh vertices in edit mode.**
 - **All cuboids must be separate objects.**
-- **Apply all scale to objects before exporting.** Use `ctrl + A` to bring up
-  Apply menu then hit `Apply > Scale`. (Also found in `Object > Apply > Scale`
-  tab in viewport)
 - **Attach points**: Create an "Empty" type object (e.g.
   **Shift + A > Empty > Arrows**) and name it "attach_{name}", the {name}
   will become an attachpoint. e.g. "attach_Center" will generate an

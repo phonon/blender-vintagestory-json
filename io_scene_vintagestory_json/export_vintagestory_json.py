@@ -481,6 +481,15 @@ def generate_mesh_element(
     for i, v in enumerate(mesh.vertices):
         v_local[0:3,i] = v.co
     
+    # apply scale matrix to local vertices
+    if obj.scale[0] != 1.0 or obj.scale[1] != 1.0 or obj.scale[2] != 1.0:
+        scale_matrix = np.array([
+            [obj.scale[0], 0, 0],
+            [0, obj.scale[1], 0],
+            [0, 0, obj.scale[2]],
+        ])
+        v_local = scale_matrix @ v_local
+
     # create output coords, rotation
     # get min/max for to/from points
     v_min = np.amin(v_local, axis=1)
