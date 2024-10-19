@@ -1,5 +1,6 @@
 import bpy
 import math
+import re
 
 class OpPrimitiveAddBlock(bpy.types.Operator):
     """Standard block 16x16, equivalent to a bounding box in VS model creator"""
@@ -197,3 +198,48 @@ class OpPrimitiveAddOctsphere(bpy.types.Operator):
             c.select_set(True)
         
         return {"FINISHED"}
+
+
+remove_blender_duplicate = re.compile("(.+)(?:\.\d+)$")
+class OpPrimitiveRenameDuplicateForSelected(bpy.types.Operator):
+    """
+    Blender Adds ".###" Name to duplicate names, 
+    Set override names to equal back to the ones that were previously set    
+    """
+
+    bl_idname ="vintagestory.primitive_name_duplicate_fallback"
+    bl_label = "Remove .### on Export"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(self, context):
+        return context.active_object is not None and context.active_object.type == "MESH" 
+
+    def execute(self, context):
+        for obj in context.selected_objects:
+            m = remove_blender_duplicate.search(obj.name)
+            if m is not None:
+                obj["rename"] = m.group(1)
+        return {"FINISHED"}
+
+
+class OpPrimitiveRemoveRenameOnExportForSelected(bpy.types.Operator):
+    """
+    Remove "Rename on Export" from Selected Objects
+    """
+
+    bl_idname ="vintagestory.primitive_remove_rename_on_export"
+    bl_label = "Remove Rename On Export from Selected"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(self, context):
+        return context.active_object is not None and context.active_object.type == "MESH"
+
+    def execute(self, context):
+        for obj in context.selected_objects:
+            if "rename" in obj:
+                del obj["rename"]
+        
+        return {"FINISHED"}
+    
