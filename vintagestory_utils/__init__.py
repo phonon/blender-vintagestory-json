@@ -240,6 +240,37 @@ class VINTAGESTORY_PT_panel_animation_tools(bpy.types.Panel):
             layout.label(text="")
 
         
+class VINTAGESTORY_PT_panel_io_tools(bpy.types.Panel):
+    """Vintagestory tools in viewport N-panel:
+    Contains io tools.
+    """
+    bl_idname = "VINTAGESTORY_PT_panel_io_tools"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "VintageStory"
+    bl_label = "Export Tools"
+
+    # for viewing object custom properties
+    _context_path = "object"
+    _property_type = bpy.types.Object
+
+    def draw(self, context):
+        layout = self.layout
+
+        # operator: export collection
+        layout.operator(
+            operator="vintagestory.export_json_collection",
+            icon="EXPORT",
+            text="Export Selected Collection",
+        )
+
+        # operator: export selected (highlighted) collection in Scene Collection 
+        layout.operator(
+            operator="vintagestory.export_json_highlighted_collections",
+            icon="EXPORT",
+            text="Export Highlighted Collections",
+        )
+
 def add_submenu(self, context):
     self.layout.separator()
     self.layout.menu(VIEW3D_MT_vintagestory_submenu.bl_idname, icon="MESH_CUBE")
@@ -266,6 +297,7 @@ classes = [
     VIEW3D_MT_vintagestory_submenu,
     VINTAGESTORY_PT_panel_uv_tools,
     VINTAGESTORY_PT_panel_animation_tools,
+    VINTAGESTORY_PT_panel_io_tools,
 ]
 
 def register():

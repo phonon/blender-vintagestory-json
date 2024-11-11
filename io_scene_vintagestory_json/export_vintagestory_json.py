@@ -1444,8 +1444,8 @@ def save_objects_by_armature(
 
 
 def save_objects(
-    filepath,
-    objects,
+    filepath="",
+    objects=[],
     skip_disabled_render=True,
     translate_origin=None,
     generate_texture=True,
@@ -1463,16 +1463,19 @@ def save_objects(
     use_step_parent=True,
     animation_version_0=False,
     **kwargs
-):
+) -> tuple[set[str], set[str], str]:
     """Main exporter function. Parses Blender objects into VintageStory
     cuboid format, uvs, and handles texture read and generation.
-    Will save .json file to output path.
+    Will save .json file to output path because this needs to save both
+    json containing model structure and textures generated during export.
+    If need ever arises, make this return (model, textures) and separate
+    func that saves to files.
 
     Inputs:
     - filepath:
-        Output file path name.
+        Output file path name. Returns error if file is "" or None.
     - object:
-        Iterable collection of Blender objects
+        Iterable collection of Blender objects. Returns warning if empty.
     - skip_disabled_render:
         Skip objects with disable render (hide_render) flag
     - translate_origin:
@@ -1507,7 +1510,16 @@ def save_objects(
     - use_step_parent:
         Transform root elements relative to their step parent element, so
         elements are correctly attached in game.
+        TODO: make this flag actually work, right now automatically enabled
+    
+    Returns:
+    Tuple of (result, message_type, message):
+    - result: set of result types, e.g. {"FINISHED"} or {"CANCELLED"}
+    - message_type: set of message types, e.g. {"WARNING"} or {"INFO"}
+    - message: string message, for use in `op.report(type, message)`.
     """
+    if filepath == "" or filepath is None:
+        return {"CANCELLED"}, {"ERROR"}, "No output file path specified"
 
     # output json model stub
     model_json = {
@@ -1554,16 +1566,11 @@ def save_objects(
             skip_disabled_render=skip_disabled_render,
         )
 
-
         if export_armature and armature is not None:
             # do export using root bone children
             export_objects = []
             for bone in root_bones:
                 export_objects.append(bone_hierarchy[bone.name].main)
-        
-        # for debugging
-        # print("EXPORT OBJECTS", export_objects)
-        # print("BONE CHILDREN", bone_hierarchy)
     elif has_step_parent:
         # get armature from all scene objects
         armature, root_bones, bone_hierarchy = get_bone_hierarchy_from_objects(
@@ -1828,29 +1835,8 @@ def save_objects(
     # save json
     with open(filepath, "w") as f:
         json.dump(model_json, f, separators=(",", ":"), indent=indent)
-
-
-def save(
-    context,
-    filepath,
-    selection_only = False,
-    **kwargs,
-):
-    if selection_only:
-        objects = filter_root_objects(bpy.context.selected_objects)
+    
+    if len(root_elements) == 0:
+        return {"FINISHED"}, {"WARNING"}, f"Exported to {filepath} (Warn: No objects exported)"
     else:
-        objects = filter_root_objects(bpy.context.scene.collection.all_objects[:])
-
-    # remap texture size overrides value 0 => None
-    if "texture_size_x_override" in kwargs:
-        if kwargs["texture_size_x_override"] == 0:
-            kwargs["texture_size_x_override"] = None
-    if "texture_size_y_override" in kwargs:
-        if kwargs["texture_size_y_override"] == 0:
-            kwargs["texture_size_y_override"] = None
-
-    save_objects(filepath, objects, **kwargs)
-
-    print("SAVED", filepath)
-
-    return {"FINISHED"}
+        return {"FINISHED"}, {"INFO"}, f"Exported to {filepath}"

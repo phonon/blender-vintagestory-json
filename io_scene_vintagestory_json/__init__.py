@@ -84,6 +84,51 @@ class ImportVintageStoryJSON(Operator, ImportHelper):
         return import_vintagestory_json.load(context, **args)
 
 
+def run_export(
+    op,
+    **args,
+):
+    """Common internal function to run export and handle post export script.
+    Re-usable for different export operators.
+    """
+    if args.get("do_translate_origin", False):
+        args["translate_origin"] = [
+            args["translate_origin_x"],
+            args["translate_origin_y"],
+            args["translate_origin_z"],
+        ]
+    else:
+        args["translate_origin"] = None
+    
+    # remap texture size overrides value 0 => None
+    if "texture_size_x_override" in args:
+        if args["texture_size_x_override"] == 0:
+            args["texture_size_x_override"] = None
+    if "texture_size_y_override" in args:
+        if args["texture_size_y_override"] == 0:
+            args["texture_size_y_override"] = None
+    
+    result, msg_type, msg = export_vintagestory_json.save_objects(**args)
+
+    if "FINISHED" in result:
+        op.report(msg_type, msg)
+
+        if args.get("run_post_export_script", False):
+            import os
+            import subprocess
+            post_export_script = args.get("post_export_script", "")
+            save_filepath = args["filepath"]
+            save_dir = os.path.dirname(save_filepath)
+            script = os.path.join(save_dir, post_export_script)
+            if post_export_script != "" and os.path.exists(script) and os.path.isfile(script):
+                print(f"Running post export script: {script}")
+                subprocess.run(["python", script, save_filepath], shell=False)
+            else:
+                op.report({"WARNING"}, f"Post export script not found: {post_export_script}")
+    
+    return result
+
+
 class ExportVintageStoryJSON(Operator, ExportHelper):
     """Exports scene cuboids as VintageStory .json object"""
     bl_idname = "vintagestory.export_json"
@@ -265,35 +310,11 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
 
     def execute(self, context):
         args = self.as_keywords()
-        if args["do_translate_origin"] == True:
-            args["translate_origin"] = [
-                args["translate_origin_x"],
-                args["translate_origin_y"],
-                args["translate_origin_z"],
-            ]
+        if self.selection_only:
+            args["objects"] = export_vintagestory_json.filter_root_objects(bpy.context.selected_objects)
         else:
-            args["translate_origin"] = None
-        
-        # store executed export config properties to scene
-        for prop, val in args.items():
-            if prop not in self.skip_save_props:
-                bpy.context.scene["vintagestory_export_" + prop] = val
-
-        result = export_vintagestory_json.save(context, **args)
-
-        if self.run_post_export_script:
-            import os
-            import subprocess
-            savefilename= self.filepath
-            savefolder = os.path.dirname(savefilename)
-            script = os.path.join(savefolder, self.post_export_script)
-            if self.post_export_script != "" and os.path.exists(script) and os.path.isfile(script):
-                print(f"Running post export script: {script}")
-                subprocess.run(["python", script, savefilename], shell=False)
-            else:
-                self.report({"WARNING"}, f"Post export script not found: {self.post_export_script}")
-            
-        return result
+            args["objects"] = export_vintagestory_json.filter_root_objects(bpy.context.scene.collection.all_objects[:])
+        return run_export(self, **args)
 
     def draw(self, context):
         if not self.initialized:
@@ -307,6 +328,129 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
                 prop_key = "vintagestory_export_" + prop
                 if prop_key in bpy.context.scene:
                     setattr(self, prop, bpy.context.scene[prop_key])
+
+
+class ExportVintageStoryJsonCollection(bpy.types.Operator):
+    """Export selected object's associated collection. This finds the first
+    selected object's collection in scene root collections and exports all
+    objects inside that root collection. This is to make it easy to export
+    "skin parts", e.g. vs characters are setup as base model and "skin parts"
+    like hair. This enables easily clicking an obj of a skin part (e.g. one
+    obj piece of the hair) and then export the whole hair collection, without
+    needing to select all hair objects and clicking through export.
+    Exported collection is saved as `{collection_name}.json` in the same
+    folder as blender file.
+    """
+    bl_idname = "vintagestory.export_json_collection"
+    bl_label = "Export collection as VintageStory .json"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        if len(bpy.context.selected_objects) == 0:
+            # print warning
+            self.report({"WARNING"}, "No objects selected")
+            return {"CANCELLED"}
+        
+        obj = bpy.context.selected_objects[0] # take first selected object
+        collection = obj.users_collection[0]
+        collection_name = collection.name
+
+        if collection == bpy.context.scene.collection:
+            self.report({"WARNING"}, "Cannot export root collection")
+            return {"CANCELLED"}
+
+        outer_collections = { collection.name: collection for collection in bpy.context.scene.collection.children }
+
+        # first check if obj is a child of a collection in root collections
+        # which is the most common case
+        collection_to_export = outer_collections.get(collection_name, None)
+
+        if collection_to_export is None:
+            # collection is not directly in an outer collection, must search
+            # recursively for which outer collection contains the obj's
+            # direct collection
+            for outer_collection in outer_collections.values():
+                if collection in outer_collection.children_recursive:
+                    collection_to_export = outer_collection
+                    break
+        
+        if collection_to_export is None:
+            self.report({"ERROR"}, "Could not find collection to export, is it in the scene?")
+            return {"CANCELLED"}
+
+        # get blender filepath
+        # https://github.com/dfelinto/blender/blob/master/release/scripts/modules/bpy_extras/io_utils.py#L56
+        import os
+        blend_filepath = context.blend_data.filepath
+        save_dir = os.path.dirname(blend_filepath) if blend_filepath is not None else bpy.path.abspath("//")
+        save_filepath = os.path.join(save_dir, collection_to_export.name + ".json")
+
+        args = {
+            "filepath": save_filepath,
+            "objects": export_vintagestory_json.filter_root_objects(collection_to_export.all_objects),
+        }
+        
+        # gather export args stored in scene
+        for prop, val in bpy.context.scene.items():
+            if "vintagestory_export_" in prop:
+                args[prop[20:]] = val
+
+        return run_export(self, **args)
+
+
+class ExportVintageStoryJsonHighlightedCollections(bpy.types.Operator):
+    """Export highlighted collections in Scene Collection as VintageStory
+    .json files. Useful to quickly re-export multiple collections when some
+    common setting has changed (e.g. material name, texture, export
+    property, etc.).
+    """
+    bl_idname = "vintagestory.export_json_highlighted_collections"
+    bl_label = "Export highlighted collections in Scene Collection as VintageStory .json"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        def get_highlighted_collections():
+            collections = []
+
+            # works on blender 4.0 to get highlighted collections
+            screen = bpy.context.screen
+            areas = [area for area in screen.areas if area.type == "OUTLINER"]
+            regions = [region for region in areas[0].regions if region.type == "WINDOW"]
+
+            with bpy.context.temp_override(area=areas[0], region=regions[0], screen=screen):
+                for item in bpy.context.selected_ids:
+                    if item.bl_rna.identifier == "Collection":
+                        collections.append(item)
+            
+            return collections
+        
+        highlighted_collections = get_highlighted_collections()
+        print(highlighted_collections)
+        if len(highlighted_collections) == 0:
+            self.report({"WARNING"}, "No collections highlighted in Scene Collection outliner.")
+            return {"CANCELLED"}
+        
+        # get blender filepath
+        # https://github.com/dfelinto/blender/blob/master/release/scripts/modules/bpy_extras/io_utils.py#L56
+        import os
+        blend_filepath = context.blend_data.filepath
+        save_dir = os.path.dirname(blend_filepath) if blend_filepath is not None else bpy.path.abspath("//")
+        
+        # gather export shared args stored in scene
+        args = {}
+        for prop, val in bpy.context.scene.items():
+            if "vintagestory_export_" in prop:
+                args[prop[20:]] = val
+        
+        # export each highlighted collection
+        for collection_to_export in highlighted_collections:
+            # collection specific args, re-write for each collection
+            args["filepath"] = os.path.join(save_dir, collection_to_export.name + ".json")
+            args["objects"] = export_vintagestory_json.filter_root_objects(collection_to_export.all_objects)
+
+            run_export(self, **args)
+
+        return {"FINISHED"}
 
 
 # export options panel for geometry
@@ -457,6 +601,8 @@ classes = [
     # main import/export
     ImportVintageStoryJSON,
     ExportVintageStoryJSON,
+    ExportVintageStoryJsonCollection,
+    ExportVintageStoryJsonHighlightedCollections,
     # PANELS:
     VINTAGESTORY_PT_export_geometry,
     VINTAGESTORY_PT_export_textures,
