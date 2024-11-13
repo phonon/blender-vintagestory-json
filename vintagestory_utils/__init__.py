@@ -238,6 +238,13 @@ class VINTAGESTORY_PT_panel_animation_tools(bpy.types.Panel):
         
         if not draw_custom_prop(layout, rna_item, context_member, self._property_type, str, "rename"):
             layout.label(text="")
+        
+        # operator: cleanup object edit mode rotation
+        layout.operator(
+            operator="vintagestory.cleanup_rotation",
+            icon="DRIVER_ROTATIONAL_DIFFERENCE",
+            text="Cleanup Rotation",
+        )
 
         
 class VINTAGESTORY_PT_panel_io_tools(bpy.types.Panel):
@@ -290,6 +297,7 @@ classes = [
     animation.OpAssignStepParentConstraint,
     animation.OpRemoveStepParentConstraint,
     animation.OpAssignRename,
+    animation.OpCleanupRotation,
     uv.OpUVCuboidUnwrap,
     uv.OpUVPixelUnwrap,
     uv.OpUVPackSimpleBoundingBox,
