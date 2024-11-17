@@ -1,11 +1,13 @@
 import bpy
 from . import animation
+from . import model
 from . import primitive
 from . import uv
 
 # reload imported modules
 import importlib
 importlib.reload(animation)
+importlib.reload(model)
 importlib.reload(primitive)
 importlib.reload(uv)
 
@@ -58,6 +60,37 @@ class VIEW3D_MT_vintagestory_submenu(bpy.types.Menu):
             primitive.OpPrimitiveAddOctsphere.bl_idname,
             text="Octsphere",
             icon="MESH_UVSPHERE")
+
+
+# =============================================================================
+# Modelling tools
+# =============================================================================
+class VINTAGESTORY_PT_panel_model_tools(bpy.types.Panel):
+    """Vintagestory tools in viewport N-panel:
+    Contains Modelling util tools.
+    """
+    bl_idname = "VINTAGESTORY_PT_panel_model_tools"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "VintageStory"
+    bl_label = "Model Tools"
+ 
+    def draw(self, context):
+        layout = self.layout
+
+        # operator: unwrap selected cuboid objects UVs
+        layout.operator(
+            operator="vintagestory.duplicate_collection",
+            icon="DUPLICATE",
+            text="Duplicate Skin Part",
+        )
+        # operator: cleanup object edit mode rotation
+        layout.operator(
+            operator="vintagestory.cleanup_rotation",
+            icon="DRIVER_ROTATIONAL_DIFFERENCE",
+            text="Cleanup Rotation",
+        )
+
 
 # =============================================================================
 # UV tools
@@ -238,15 +271,8 @@ class VINTAGESTORY_PT_panel_animation_tools(bpy.types.Panel):
         
         if not draw_custom_prop(layout, rna_item, context_member, self._property_type, str, "rename"):
             layout.label(text="")
-        
-        # operator: cleanup object edit mode rotation
-        layout.operator(
-            operator="vintagestory.cleanup_rotation",
-            icon="DRIVER_ROTATIONAL_DIFFERENCE",
-            text="Cleanup Rotation",
-        )
 
-        
+
 class VINTAGESTORY_PT_panel_io_tools(bpy.types.Panel):
     """Vintagestory tools in viewport N-panel:
     Contains io tools.
@@ -291,18 +317,20 @@ classes = [
     primitive.OpPrimitiveAddHexadecagon,
     primitive.OpPrimitiveAddHexadecagonHollow,
     primitive.OpPrimitiveAddOctsphere,
+    model.OpDuplicateCollection,
+    model.OpCleanupRotation,
     animation.OpMakeBonesXZY,
     animation.OpAssignBones,
     animation.OpAssignStepParentName,
     animation.OpAssignStepParentConstraint,
     animation.OpRemoveStepParentConstraint,
     animation.OpAssignRename,
-    animation.OpCleanupRotation,
     uv.OpUVCuboidUnwrap,
     uv.OpUVPixelUnwrap,
     uv.OpUVPackSimpleBoundingBox,
     # PANELS AND MENUS
     VIEW3D_MT_vintagestory_submenu,
+    VINTAGESTORY_PT_panel_model_tools,
     VINTAGESTORY_PT_panel_uv_tools,
     VINTAGESTORY_PT_panel_animation_tools,
     VINTAGESTORY_PT_panel_io_tools,
