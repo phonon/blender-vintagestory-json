@@ -2,14 +2,14 @@ import bpy
 from . import animation
 from . import model
 from . import primitive
-from . import uv
+from . import texture
 
 # reload imported modules
 import importlib
 importlib.reload(animation)
 importlib.reload(model)
 importlib.reload(primitive)
-importlib.reload(uv)
+importlib.reload(texture)
 
 def rna_idprop_context_value(context, context_member, property_type):
     """
@@ -29,6 +29,58 @@ def rna_idprop_context_value(context, context_member, property_type):
         rna_item = context.path_resolve(context_member)
 
     return rna_item, context_member
+
+def rna_idprop_quote_path(prop):
+    return "[\"{:s}\"]".format(bpy.utils.escape_identifier(prop))
+
+def draw_custom_prop(
+    layout,
+    rna_item,
+    context_member,
+    property_type,
+    value_type,
+    key,
+) -> bool:
+    """Helper to draw custom property into a layout row.
+    Return true if successful, false if failed.
+    """
+    # poll should get this...
+    if not rna_item:
+        return False
+    
+    if not isinstance(rna_item, property_type):
+        return False
+    
+    if key not in rna_item or not isinstance(rna_item.get(key), value_type):
+        return False
+    
+    if rna_item.id_data.library is not None:
+        use_edit = False
+    else:
+        use_edit = True
+    
+    is_lib_override = rna_item.id_data.override_library and rna_item.id_data.override_library.reference
+
+    layout.use_property_decorate = False
+
+    value_row = layout.row()
+    value_column = value_row.column(align=True)
+
+    value_column.prop(rna_item, rna_idprop_quote_path(key), text="")
+
+    operator_row = value_row.row(align=True)
+    operator_row.alignment = "RIGHT"
+
+    # Do not allow editing of overridden properties (we cannot use a poll function
+    # of the operators here since they have no access to the specific property).
+    operator_row.enabled = not (is_lib_override and key in rna_item.id_data.override_library.reference)
+
+    if use_edit:
+        props = operator_row.operator("wm.properties_remove", text="", icon='X', emboss=False)
+        props.data_path = context_member
+        props.property_name = key
+    
+    return True
 
 class VIEW3D_MT_vintagestory_submenu(bpy.types.Menu):
     bl_idname = "VIEW3D_MT_vintagestory_submenu"
@@ -95,16 +147,16 @@ class VINTAGESTORY_PT_panel_model_tools(bpy.types.Panel):
 # =============================================================================
 # UV tools
 # =============================================================================
-class VINTAGESTORY_PT_panel_uv_tools(bpy.types.Panel):
+class VINTAGESTORY_PT_panel_texture_tools(bpy.types.Panel):
     """Vintagestory tools in viewport N-panel:
     Contains UV util tools.
     """
-    bl_idname = "VINTAGESTORY_PT_panel_uv_tools"
+    bl_idname = "VINTAGESTORY_PT_panel_texture_tools"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "VintageStory"
     bl_label = "Texture Tools"
- 
+
     def draw(self, context):
         layout = self.layout
 
@@ -126,62 +178,17 @@ class VINTAGESTORY_PT_panel_uv_tools(bpy.types.Panel):
             icon="STICKY_UVS_LOC",
             text="UV Pack",
         )
+        # operator: disable material on export
+        layout.operator_enum(
+            operator="vintagestory.disable_material",
+            property="disable",
+            icon_only=False,
+        )
+
 
 # =============================================================================
 # Animation tools
 # =============================================================================
-def rna_idprop_quote_path(prop):
-    return "[\"{:s}\"]".format(bpy.utils.escape_identifier(prop))
-
-def draw_custom_prop(
-    layout,
-    rna_item,
-    context_member,
-    property_type,
-    value_type,
-    key,
-) -> bool:
-    """Helper to draw custom property into a layout row.
-    Return true if successful, false if failed.
-    """
-    # poll should get this...
-    if not rna_item:
-        return False
-    
-    if not isinstance(rna_item, property_type):
-        return False
-    
-    if key not in rna_item or not isinstance(rna_item.get(key), value_type):
-        return False
-    
-    if rna_item.id_data.library is not None:
-        use_edit = False
-    else:
-        use_edit = True
-    
-    is_lib_override = rna_item.id_data.override_library and rna_item.id_data.override_library.reference
-
-    layout.use_property_decorate = False
-
-    value_row = layout.row()
-    value_column = value_row.column(align=True)
-
-    value_column.prop(rna_item, rna_idprop_quote_path(key), text="")
-
-    operator_row = value_row.row(align=True)
-    operator_row.alignment = "RIGHT"
-
-    # Do not allow editing of overridden properties (we cannot use a poll function
-    # of the operators here since they have no access to the specific property).
-    operator_row.enabled = not (is_lib_override and key in rna_item.id_data.override_library.reference)
-
-    if use_edit:
-        props = operator_row.operator("wm.properties_remove", text="", icon='X', emboss=False)
-        props.data_path = context_member
-        props.property_name = key
-    
-    return True
-
 
 class VINTAGESTORY_PT_panel_animation_tools(bpy.types.Panel):
     """Vintagestory tools in viewport N-panel:
@@ -325,13 +332,14 @@ classes = [
     animation.OpAssignStepParentConstraint,
     animation.OpRemoveStepParentConstraint,
     animation.OpAssignRename,
-    uv.OpUVCuboidUnwrap,
-    uv.OpUVPixelUnwrap,
-    uv.OpUVPackSimpleBoundingBox,
+    texture.OpUVCuboidUnwrap,
+    texture.OpUVPixelUnwrap,
+    texture.OpUVPackSimpleBoundingBox,
+    texture.OpDisableMaterial,
     # PANELS AND MENUS
     VIEW3D_MT_vintagestory_submenu,
     VINTAGESTORY_PT_panel_model_tools,
-    VINTAGESTORY_PT_panel_uv_tools,
+    VINTAGESTORY_PT_panel_texture_tools,
     VINTAGESTORY_PT_panel_animation_tools,
     VINTAGESTORY_PT_panel_io_tools,
 ]

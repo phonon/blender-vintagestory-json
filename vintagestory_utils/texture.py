@@ -1286,3 +1286,53 @@ class OpUVPackSimpleBoundingBox(bpy.types.Operator):
             bpy.ops.object.mode_set(mode=user_mode)
         
         return {"FINISHED"}
+
+DISABLE_MATERIAL_ENUM = (
+    # (ID, Name, Description, Icon, Number)
+    ("ENABLE", "Enable Material", "Enable material", "SNAP_VOLUME", 0),
+    ("DISABLE", "Disable Material", "Disable material", "MESH_CUBE", 1),
+)
+
+class OpDisableMaterial(bpy.types.Operator):
+    """Disable or enable selected face material in export"""
+    bl_idname = "vintagestory.disable_material"
+    bl_label = "Rename on Export"
+    bl_options = {"REGISTER", "UNDO"}
+
+    disable: bpy.props.EnumProperty(
+        name="disable",
+        description="Disable face material in export",
+        default="ENABLE",
+        items=DISABLE_MATERIAL_ENUM,
+    )
+
+    def execute(self, context):
+        import bmesh
+        args = self.as_keywords()
+
+        # convert enum to boolean
+        disable = args.get("disable", "ENABLE") == "DISABLE"
+
+        # if not in edit mode, print error
+        if context.mode != "EDIT_MESH":
+            self.report({"ERROR"}, "Must select faces in Edit Mode")
+            return {"FINISHED"}
+        
+        # get selected faces
+        obj = context.object        
+        bm = bmesh.from_edit_mesh(obj.data)
+        
+        # disable material for selected faces
+        for f in bm.faces:
+            if not f.select:
+                continue
+            if f.material_index < len(obj.material_slots):
+                slot = obj.material_slots[f.material_index]
+                material = slot.material
+                material["disable"] = disable
+                if disable:
+                    self.report({"INFO"}, f"Disabled material: {material.name}")
+                else:
+                    self.report({"INFO"}, f"Enabled material: {material.name}")
+
+        return {"FINISHED"}

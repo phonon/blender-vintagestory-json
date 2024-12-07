@@ -207,13 +207,14 @@ class FaceMaterial:
     """
     COLOR = 0
     TEXTURE = 1
+    DISABLE = 2
 
     # type enum, one of the integers above 
     type: int
     # name of material
     name: str
     # color
-    color: tuple[int, int, int, int]
+    color: tuple[int, int, int, int] = (0.0, 0.0, 0.0, 1.0),
     # texture path + size
     texture_path: str = ""
     # texture size
@@ -222,48 +223,55 @@ class FaceMaterial:
     glow: int = 0
 
 
-def get_face_material(
-    obj,
-    material_index: int,
-    default_color = (0.0, 0.0, 0.0, 1.0)
-) -> FaceMaterial:
-    """Get obj material color in index as either 
-    - tuple (r, g, b, a) if using a default color input
-    - texture file name string "path" if using a texture input
-    """
-    if material_index < len(obj.material_slots):
-        slot = obj.material_slots[material_index]
-        material = slot.material
-        if material is not None:
-            glow = material["glow"] if "glow" in material else 0
-            color = get_material_color(material)
-            if color is not None:
-                if isinstance(color, tuple):
+    def from_face(
+        obj,
+        material_index: int,
+        default_color = (0.0, 0.0, 0.0, 1.0),
+    ):
+        """Get obj material color in index as either 
+        - tuple (r, g, b, a) if using a default color input
+        - texture file name string "path" if using a texture input
+        """
+        if material_index < len(obj.material_slots):
+            slot = obj.material_slots[material_index]
+            material = slot.material
+            if material is not None:
+                # check if material is disabled, return disable material
+                if "disable" in material and material["disable"] == True:
                     return FaceMaterial(
-                        FaceMaterial.COLOR,
+                        type=FaceMaterial.DISABLE,
                         name=material.name,
-                        color=color,
-                        glow=glow,
-                    )
-                # texture
-                elif isinstance(color, TextureInfo):
-                    return FaceMaterial(
-                        FaceMaterial.TEXTURE,
-                        name=material.name,
-                        color=default_color,
-                        texture_path=color.path,
-                        texture_size=color.size,
-                        glow=glow,
                     )
                 
-            # warn that material has no color or texture
-            print(f"WARNING: {obj.name} material {material.name} has no color or texture")
-        
-    return FaceMaterial(
-        FaceMaterial.COLOR,
-        name=material.name,
-        color=default_color,
-    )
+                glow = material["glow"] if "glow" in material else 0
+                color = get_material_color(material)
+                if color is not None:
+                    if isinstance(color, tuple):
+                        return FaceMaterial(
+                            type=FaceMaterial.COLOR,
+                            name=material.name,
+                            color=color,
+                            glow=glow,
+                        )
+                    # texture
+                    elif isinstance(color, TextureInfo):
+                        return FaceMaterial(
+                            type=FaceMaterial.TEXTURE,
+                            name=material.name,
+                            color=default_color,
+                            texture_path=color.path,
+                            texture_size=color.size,
+                            glow=glow,
+                        )
+                    
+                # warn that material has no color or texture
+                print(f"WARNING: {obj.name} material {material.name} has no color or texture")
+            
+        return FaceMaterial(
+            type=FaceMaterial.COLOR,
+            name=material.name,
+            color=default_color,
+        )
 
 
 def loop_is_clockwise(coords):
@@ -559,10 +567,17 @@ def generate_mesh_element(
         face_direction_index = np.argmax(np.sum(face_normal_stacked * DIRECTION_NORMALS, axis=1), axis=0)
         d = DIRECTIONS[face_direction_index]
         
-        face_material = get_face_material(obj, face.material_index)
+        face_material = FaceMaterial.from_face(
+            obj,
+            face.material_index,
+        )
         
+        # disabled face
+        if face_material.type == FaceMaterial.DISABLE:
+            faces[d]["texture"] = "#" + face_material.name
+            faces[d]["enabled"] = False
         # solid color tuple
-        if face_material.type == FaceMaterial.COLOR and export_generated_texture:
+        elif face_material.type == FaceMaterial.COLOR and export_generated_texture:
             faces[d] = face_material # replace face with face material, will convert later
             if model_colors is not None:
                 model_colors.add(face_material.color)
