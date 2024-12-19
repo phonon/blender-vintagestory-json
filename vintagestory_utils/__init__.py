@@ -184,6 +184,12 @@ class VINTAGESTORY_PT_panel_texture_tools(bpy.types.Panel):
             property="disable",
             icon_only=False,
         )
+        # operator: assign object glow
+        layout.operator(
+            operator="vintagestory.assign_glow",
+            icon="PROP_ON",
+            text="Glow",
+        )
 
 
 # =============================================================================
@@ -332,6 +338,7 @@ classes = [
     animation.OpAssignStepParentConstraint,
     animation.OpRemoveStepParentConstraint,
     animation.OpAssignRename,
+    texture.OpAssignGlow,
     texture.OpUVCuboidUnwrap,
     texture.OpUVPixelUnwrap,
     texture.OpUVPackSimpleBoundingBox,

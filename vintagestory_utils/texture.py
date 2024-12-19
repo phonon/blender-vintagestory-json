@@ -1336,3 +1336,40 @@ class OpDisableMaterial(bpy.types.Operator):
                     self.report({"INFO"}, f"Enabled material: {material.name}")
 
         return {"FINISHED"}
+
+
+class OpAssignGlow(bpy.types.Operator):
+    """Assign glow custom property to object."""
+    bl_idname = "vintagestory.assign_glow"
+    bl_label = "Glow"
+    bl_options = {"REGISTER", "UNDO"}
+
+    glow: bpy.props.IntProperty(
+        name="Glow",
+        description="Value of glow in 0 to 255",
+        default=128,
+        min=0,
+        max=255,
+        soft_min=0,
+        soft_max=255,
+    )
+
+    def invoke(self, context, event):
+        wm = context.window_manager
+        return wm.invoke_props_dialog(self)
+
+    def execute(self, context):
+        args = self.as_keywords()
+
+        # unpack args
+        glow = args.get("glow")
+        
+        if len(bpy.context.selected_objects) == 0:
+            self.report({"ERROR"}, "No objects selected")
+            return {"FINISHED"}
+
+        # add "glow" custom property to selected objects with value
+        for obj in bpy.context.selected_objects:
+            obj["glow"] = glow
+
+        return {"FINISHED"}

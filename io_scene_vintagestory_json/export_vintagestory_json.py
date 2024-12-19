@@ -243,7 +243,14 @@ class FaceMaterial:
                         name=material.name,
                     )
                 
-                glow = material["glow"] if "glow" in material else 0
+                # get glow from object or material
+                if "glow" in obj:
+                    glow = obj["glow"]
+                elif "glow" in material:
+                    glow = material["glow"]
+                else:
+                    glow = 0
+
                 color = get_material_color(material)
                 if color is not None:
                     if isinstance(color, tuple):
