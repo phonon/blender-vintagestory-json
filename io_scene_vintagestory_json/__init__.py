@@ -310,6 +310,12 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
 
     def execute(self, context):
         args = self.as_keywords()
+
+        # store executed export config properties to scene
+        for prop, val in args.items():
+            if prop not in self.skip_save_props:
+                bpy.context.scene["vintagestory_export_" + prop] = val
+        
         if self.selection_only:
             args["objects"] = export_vintagestory_json.filter_root_objects(bpy.context.selected_objects)
         else:
