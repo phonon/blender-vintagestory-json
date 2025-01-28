@@ -195,6 +195,7 @@ def parse_element(
     # create cube
     bpy.ops.mesh.primitive_cube_add(location=location, rotation=rot_euler)
     obj = bpy.context.active_object
+    obj.rotation_mode = 'XZY'
     mesh = obj.data
     mesh_materials = {} # tex_name => material_index
 
