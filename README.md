@@ -19,6 +19,9 @@ Installation
    (search for *Vintage Story JSON Import/Export*).
 3. Restarting Blender may be necessary.
 
+Optional: For relaxed json import (json5), you must have pyjson5 installed. 
+Make sure you have pip installed (see https://pip.pypa.io/en/stable/installation/ ), 
+then run `pip3 install pyjson5`.
 
 Export Guide/Notes
 ---------------------------------------

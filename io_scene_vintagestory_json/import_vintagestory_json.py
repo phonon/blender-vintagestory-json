@@ -1,5 +1,4 @@
 import os
-import json
 import numpy as np
 import math
 import time
@@ -7,6 +6,11 @@ from math import inf
 import bpy
 from mathutils import Vector, Euler, Quaternion, Matrix
 from . import animation
+
+try:
+    import pyjson5 as json
+except ImportError:
+    import json
 
 import importlib
 importlib.reload(animation)
@@ -697,9 +701,6 @@ def load(context,
             # unhandled issue
             except Exception as err:
                 raise err
-
-        
-        # data = json.load(f)
     
     # chunks of import file path, to get base directory
     filepath_parts = filepath.split(os.path.sep)
