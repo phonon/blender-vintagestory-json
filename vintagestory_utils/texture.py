@@ -1339,7 +1339,7 @@ class OpDisableMaterial(bpy.types.Operator):
 
 
 class OpAssignGlow(bpy.types.Operator):
-    """Assign glow custom property to object."""
+    """Assign glow custom property to object (0 to remove)"""
     bl_idname = "vintagestory.assign_glow"
     bl_label = "Glow"
     bl_options = {"REGISTER", "UNDO"}
@@ -1368,8 +1368,24 @@ class OpAssignGlow(bpy.types.Operator):
             self.report({"ERROR"}, "No objects selected")
             return {"FINISHED"}
 
-        # add "glow" custom property to selected objects with value
-        for obj in bpy.context.selected_objects:
-            obj["glow"] = glow
-
+        if glow > 0:
+            # add "glow" custom property to selected objects with value
+            for obj in bpy.context.selected_objects:
+                obj["glow"] = glow
+        elif glow == 0:
+            # remove glow custom property
+            num_removed = 0
+            for obj in bpy.context.selected_objects:
+                if "glow" in obj:
+                    num_removed += 1
+                    del obj["glow"]
+            self.report({"INFO"}, f"Removed glow property from {num_removed} objects")
+        else:
+            self.report({"ERROR"}, "Glow value must be > 0 or 0 to remove")
+        
+        # refresh n panel
+        for region in context.area.regions:
+            if region.type == "UI":
+                region.tag_redraw()
+        
         return {"FINISHED"}

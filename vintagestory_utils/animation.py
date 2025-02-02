@@ -150,7 +150,7 @@ class OpAssignBones(bpy.types.Operator):
 
 
 class OpAssignStepParentName(bpy.types.Operator):
-    """Assign StepParentName custom property to object."""
+    """Assign StepParentName custom property to object (leave empty to remove)"""
     bl_idname = "vintagestory.assign_step_parent_name"
     bl_label = "Step Parent Name"
     bl_options = {"REGISTER", "UNDO"}
@@ -169,18 +169,23 @@ class OpAssignStepParentName(bpy.types.Operator):
 
         # unpack args
         name = args.get("step_parent_name")
-
-        if name is None:
-            self.report({"ERROR"}, "No name provided")
-            return {"FINISHED"}
         
         if len(bpy.context.selected_objects) == 0:
             self.report({"ERROR"}, "No objects selected")
             return {"FINISHED"}
 
-        # add "StepParentName" custom StringProperty to selected objects
-        for obj in bpy.context.selected_objects:
-            obj["StepParentName"] = name
+        if name is None or name == "":
+            # remove "StepParentName" custom StringProperty from selected objects
+            num_removed = 0
+            for obj in bpy.context.selected_objects:
+                if "StepParentName" in obj:
+                    del obj["StepParentName"]
+                    num_removed += 1
+            self.report({"INFO"}, f"Removed StepParentName property from {num_removed} objects")
+        else:
+            # add "StepParentName" custom StringProperty to selected objects
+            for obj in bpy.context.selected_objects:
+                obj["StepParentName"] = name
         
         # refresh n panel
         for region in context.area.regions:
@@ -272,7 +277,7 @@ class OpRemoveStepParentConstraint(bpy.types.Operator):
 
 
 class OpAssignRename(bpy.types.Operator):
-    """Assign Rename custom property to object."""
+    """Assign rename on export custom property to object (empty to remove)"""
     bl_idname = "vintagestory.assign_rename"
     bl_label = "Rename on Export"
     bl_options = {"REGISTER", "UNDO"}
@@ -291,18 +296,23 @@ class OpAssignRename(bpy.types.Operator):
 
         # unpack args
         name = args.get("rename")
-
-        if name is None:
-            self.report({"ERROR"}, "No name provided")
-            return {"FINISHED"}
         
         if len(bpy.context.selected_objects) == 0:
             self.report({"ERROR"}, "No objects selected")
             return {"FINISHED"}
 
-        # add "StepParentName" custom StringProperty to selected objects
-        for obj in bpy.context.selected_objects:
-            obj["rename"] = name
+        if name is None or name == "":
+            # remove "StepParentName" custom StringProperty from selected objects
+            num_removed = 0
+            for obj in bpy.context.selected_objects:
+                if "rename" in obj:
+                    del obj["rename"]
+                    num_removed += 1
+            self.report({"INFO"}, f"Removed rename property from {num_removed} objects")
+        else:
+            # add "StepParentName" custom StringProperty to selected objects
+            for obj in bpy.context.selected_objects:
+                obj["rename"] = name
         
         # refresh n panel
         for region in context.area.regions:

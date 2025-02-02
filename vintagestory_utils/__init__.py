@@ -157,8 +157,13 @@ class VINTAGESTORY_PT_panel_texture_tools(bpy.types.Panel):
     bl_category = "VintageStory"
     bl_label = "Texture Tools"
 
+    # for viewing object custom properties
+    _context_path = "object"
+    _property_type = bpy.types.Object
+
     def draw(self, context):
         layout = self.layout
+        rna_item, context_member = rna_idprop_context_value(context, self._context_path, self._property_type)
 
         # operator: unwrap selected cuboid objects UVs
         layout.operator(
@@ -191,6 +196,12 @@ class VINTAGESTORY_PT_panel_texture_tools(bpy.types.Panel):
             text="Glow",
         )
 
+        # show step parent name for selected object
+        row = layout.row()
+        row.label(text="Glow:")
+        
+        if not draw_custom_prop(layout, rna_item, context_member, self._property_type, int, "glow"):
+            layout.label(text="")
 
 # =============================================================================
 # Animation tools
