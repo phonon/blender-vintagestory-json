@@ -276,6 +276,12 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
         default=True,
     )
 
+    rotate_shortest_distance: BoolProperty(
+        name="Rotate Shortest Distance",
+        description="Use shortest distance interpolation for rotation keyframes",
+        default=True,
+    )
+    
     animation_version_0: BoolProperty(
         name="Use Animation Version 0",
         description="Use old vintagestory animation format with incompatible transform order",
@@ -567,6 +573,7 @@ class VINTAGESTORY_PT_export_animation(bpy.types.Panel):
         layout.prop(operator, "export_armature")
         layout.prop(operator, "export_animations")
         layout.prop(operator, "use_main_object_as_bone")
+        layout.prop(operator, "rotate_shortest_distance")
         layout.prop(operator, "animation_version_0")
 
 

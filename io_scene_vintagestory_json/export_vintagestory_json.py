@@ -1215,6 +1215,7 @@ ROTATION_MODE_TO_FCURVE_PROPERTY = {
 
 def save_all_animations(
     bone_hierarchy,
+    rotate_shortest_distance=True, # shortest distance rotation interpolation
     animation_version_0=False, # use old vintagestory animation version 0
 ):
     """Save all animation actions in Blender file
@@ -1261,6 +1262,7 @@ def save_all_animations(
             name=action_name,
             armature=armature,
             on_animation_end=on_animation_end,
+            rotate_shortest_distance=rotate_shortest_distance,
             animation_version_0=animation_version_0,
         )
 
@@ -1483,6 +1485,7 @@ def save_objects(
     export_animations=True,
     use_main_object_as_bone=True,
     use_step_parent=True,
+    rotate_shortest_distance=True,
     animation_version_0=False,
     **kwargs
 ) -> tuple[set[str], set[str], str]:
@@ -1533,6 +1536,9 @@ def save_objects(
         Transform root elements relative to their step parent element, so
         elements are correctly attached in game.
         TODO: make this flag actually work, right now automatically enabled
+    - rotate_shortest_distance:
+        Use shortest distance rotation interpolation for animations.
+        This sets the "rotShortestDistance_" flags in the output keyframes.
     
     Returns:
     Tuple of (result, message_type, message):
@@ -1787,6 +1793,7 @@ def save_objects(
     if export_animations:
         animations = save_all_animations(
             bone_hierarchy,
+            rotate_shortest_distance=rotate_shortest_distance,
             animation_version_0=animation_version_0,
         )
         if len(animations) > 0:

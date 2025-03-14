@@ -148,7 +148,11 @@ class KeyframeAdapter():
     Handle conversion from Blender space to VintageStory y-up when
     keyframes are added.
     """
-    def __init__(self):
+    def __init__(
+        self,
+        rotate_shortest_distance=True,
+    ):
+        self.rotate_shortest_distance = rotate_shortest_distance
         self.keyframes = {}
 
 
@@ -184,9 +188,12 @@ class KeyframeAdapter():
         keyframe = self.keyframes[frame]
         if bone_name not in keyframe["elements"]:
             # create default keyframe element
-            keyframe["elements"][bone_name] = {
-                "rotShortestDistance": True
-            }
+            keyframe["elements"][bone_name] = {}
+
+            if self.rotate_shortest_distance:
+                keyframe["elements"][bone_name]["rotShortestDistanceX"] = True
+                keyframe["elements"][bone_name]["rotShortestDistanceY"] = True
+                keyframe["elements"][bone_name]["rotShortestDistanceZ"] = True
 
         return keyframe["elements"][bone_name]
 
@@ -366,6 +373,7 @@ class AnimationAdapter():
         name=None,
         armature=None,
         on_animation_end="repeat",
+        rotate_shortest_distance=True,
         animation_version_0=False,
     ):
         # name, for debugging only
@@ -386,6 +394,13 @@ class AnimationAdapter():
 
         # vintagestory animation end handling
         self.on_animation_end = on_animation_end.lower()
+
+        # set rotate shortest distance flags for euler keyframes,
+        # this makes ingame rotation look closer to quaternion interpolation.
+        # This is required for 360 degree rotation keyframes, which otherwise
+        # have animation jump glitches when going back from 360 -> 0 degrees
+        # when the animation repeats.
+        self.rotate_shortest_distance = rotate_shortest_distance
 
         # animation version 0: old vintagestory format which uses
         # R*T*v format and additive bone euler rotation in keyframes
@@ -527,7 +542,9 @@ class AnimationAdapter():
         name conflicting with existing objects in scene.
         """
         # map frame # => keyframe data
-        keyframes = KeyframeAdapter()
+        keyframes = KeyframeAdapter(
+            rotate_shortest_distance=self.rotate_shortest_distance,
+        )
         
         for bone_name, rotation_mode in self.bone_rotation_mode.items():
             fcu_name_prefix = "pose.bones[\"{}\"]".format(bone_name)
