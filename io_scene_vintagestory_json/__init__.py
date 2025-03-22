@@ -279,7 +279,7 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
     rotate_shortest_distance: BoolProperty(
         name="Rotate Shortest Distance",
         description="Use shortest distance interpolation for rotation keyframes",
-        default=True,
+        default=False,
     )
     
     animation_version_0: BoolProperty(
