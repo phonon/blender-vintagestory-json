@@ -1483,6 +1483,7 @@ def save_objects(
     decimal_precision=-1,
     export_armature=True,
     export_animations=True,
+    generate_animations_file=False,
     use_main_object_as_bone=True,
     use_step_parent=True,
     rotate_shortest_distance=True,
@@ -1861,9 +1862,18 @@ def save_objects(
             for anim in model_json["animations"]:
                 minify_animations(anim)
     
-    # save json
+    # save main shape json
     with open(filepath, "w") as f:
         json.dump(model_json, f, separators=(",", ":"), indent=indent)
+    
+    if generate_animations_file and "animations" in model_json:
+        # additionally, save animations to separate .json file
+        animations_dict = {
+            "animations": model_json["animations"],
+        }
+        animations_filepath = os.path.splitext(filepath)[0] + "_animations.json"
+        with open(animations_filepath, "w") as f:
+            json.dump(animations_dict, f, separators=(",", ":"), indent=indent)
     
     if len(root_elements) == 0:
         return {"FINISHED"}, {"WARNING"}, f"Exported to {filepath} (Warn: No objects exported)"

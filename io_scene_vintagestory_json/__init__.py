@@ -270,6 +270,12 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
         default=True,
     )
 
+    generate_animations_file: BoolProperty(
+        name="Generate Animations File",
+        description="Generate separate animations .json file",
+        default=False,
+    )
+
     use_main_object_as_bone: BoolProperty(
         name="Use Main Object as Bone",
         description="Use main object with same transform as bone instead of dummy bone",
@@ -572,6 +578,7 @@ class VINTAGESTORY_PT_export_animation(bpy.types.Panel):
 
         layout.prop(operator, "export_armature")
         layout.prop(operator, "export_animations")
+        layout.prop(operator, "generate_animations_file")
         layout.prop(operator, "use_main_object_as_bone")
         layout.prop(operator, "rotate_shortest_distance")
         layout.prop(operator, "animation_version_0")
