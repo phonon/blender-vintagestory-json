@@ -463,7 +463,7 @@ def generate_mesh_element(
         step_parent_name = None
         bone_parent_name = None
 
-    if bone_parent_name is not None and bone_parent_name in armature.data.bones and bone_parent_name in bone_hierarchy:
+    if armature is not None and bone_parent_name is not None and bone_parent_name in armature.data.bones and bone_parent_name in bone_hierarchy:
         parent_bone = armature.data.bones[bone_parent_name]
         parent_matrix_world = parent_bone.matrix_local.copy()
         parent_cube_origin = parent_bone.head
@@ -1171,33 +1171,37 @@ def get_bone_hierarchy(armature, root_bones):
 
     return bone_hierarchy
 
-def get_bone_hierarchy_from_objects(
+
+def get_bone_hierarchy_from_armature(
+    armature,
+):
+    """Helper function to get bone hierarchy from Blender objects."""
+
+    # reset all pose bones in armature to bind pose
+    for bone in armature.pose.bones:
+        bone.matrix_basis = Matrix.Identity(4)
+    bpy.context.view_layer.update() # force update
+    
+    root_bones = filter_root_objects(armature.data.bones)
+    bone_hierarchy = get_bone_hierarchy(armature, root_bones)
+    
+    return root_bones, bone_hierarchy
+
+
+def get_armatures_from_objects(
     objects,
     skip_disabled_render=True,
 ):
-    """Helper function to get bone hierarchy from Blender objects."""
-    armature = None
-    root_bones = []
-    bone_hierarchy = {}
-
+    """Helper function to get first armature from Blender objects."""
+    armatures = []
     for obj in objects:
         if skip_disabled_render and obj.hide_render:
             continue
 
         if isinstance(obj.data, bpy.types.Armature):
-            armature = obj
-            
-            # reset all pose bones in armature to bind pose
-            for bone in armature.pose.bones:
-                bone.matrix_basis = Matrix.Identity(4)
-            bpy.context.view_layer.update() # force update
-            
-            root_bones = filter_root_objects(armature.data.bones)
-            bone_hierarchy = get_bone_hierarchy(armature, root_bones)
-            
-            break
+            armatures.append(obj)
     
-    return armature, root_bones, bone_hierarchy
+    return armatures
 
 
 # maps a PoseBone rotation mode name to the proper
@@ -1488,6 +1492,7 @@ def save_objects(
     use_step_parent=True,
     rotate_shortest_distance=True,
     animation_version_0=False,
+    logger=None,
     **kwargs
 ) -> tuple[set[str], set[str], str]:
     """Main exporter function. Parses Blender objects into VintageStory
@@ -1540,7 +1545,9 @@ def save_objects(
     - rotate_shortest_distance:
         Use shortest distance rotation interpolation for animations.
         This sets the "rotShortestDistance_" flags in the output keyframes.
-    
+    - logger:
+        Optional blender object that can use .report(type, message) to
+        report messages to the user, e.g. warning messages.
     Returns:
     Tuple of (result, message_type, message):
     - result: set of result types, e.g. {"FINISHED"} or {"CANCELLED"}
@@ -1549,6 +1556,9 @@ def save_objects(
     """
     if filepath == "" or filepath is None:
         return {"CANCELLED"}, {"ERROR"}, "No output file path specified"
+    
+    # export status, may be modified by function if errors occur
+    status = {"INFO"}
 
     # output json model stub
     model_json = {
@@ -1588,49 +1598,61 @@ def save_objects(
         if "StepParentName" in obj and len(obj["StepParentName"]) > 0:
             has_step_parent = True
             break
+    
+    # check if any objects in scene are armatures
+    scene_armatures = get_armatures_from_objects(bpy.data.objects, skip_disabled_render=skip_disabled_render)
 
-    if export_armature:
-        armature, root_bones, bone_hierarchy = get_bone_hierarchy_from_objects(
-            objects,
-            skip_disabled_render=skip_disabled_render,
-        )
+    # case 1. exporting objects with step parent property, need armature
+    # for performing transform offset calculations
+    
+    # try to use first armature in scene
+    if has_step_parent:
+        if len(scene_armatures) > 0:
+            # use first armature in scene if did not find armature from before
+            armature = scene_armatures[0]
+            root_bones, bone_hierarchy = get_bone_hierarchy_from_armature(armature)
+        else:
+            status = {"WARNING"}
+            logger.report({"WARNING"}, "No armature found for step parent")
+    
+    # case 2. exporting selection of objects, get armature within objects
+    # selection (if any)
+    elif export_armature and len(scene_armatures) > 0:
+        # use armature only from export objects
+        exported_armatures = get_armatures_from_objects(objects, skip_disabled_render=skip_disabled_render)
+        if len(exported_armatures) > 0:
+            armature = exported_armatures[0]
+            root_bones, bone_hierarchy = get_bone_hierarchy_from_armature(armature)
+        else:
+            return {"CANCELLED"}, {"WARNING"}, "No armature found for export by armature"
 
         if export_armature and armature is not None:
-            # do export using root bone children
+            # do export starting from root bone children
             export_objects = []
             for bone in root_bones:
                 export_objects.append(bone_hierarchy[bone.name].main)
-    elif has_step_parent:
-        # get armature from all scene objects
-        armature, root_bones, bone_hierarchy = get_bone_hierarchy_from_objects(
-            objects = bpy.data.objects,
-            skip_disabled_render = skip_disabled_render,
-        )
-
+    
     # ===================================
     # export by armature
     # ===================================
-    if export_armature:
-        if armature is not None:
-            for root_bone in root_bones:
-                element = save_objects_by_armature(
-                    bone=root_bone,
-                    bone_hierarchy=bone_hierarchy,
-                    skip_disabled_render=skip_disabled_render,
-                    armature=armature,
-                    groups=groups,
-                    model_colors=model_colors,
-                    model_textures=model_textures,
-                    export_uvs=export_uvs,
-                    export_generated_texture=generate_texture,
-                    texture_size_x_override=texture_size_x_override,
-                    texture_size_y_override=texture_size_y_override,
-                    use_main_object_as_bone=use_main_object_as_bone,
-                )
-                if element is not None:
-                    root_elements.append(element)
-        else:
-            print("No armature found for export by armature")
+    if export_armature and armature is not None:
+        for root_bone in root_bones:
+            element = save_objects_by_armature(
+                bone=root_bone,
+                bone_hierarchy=bone_hierarchy,
+                skip_disabled_render=skip_disabled_render,
+                armature=armature,
+                groups=groups,
+                model_colors=model_colors,
+                model_textures=model_textures,
+                export_uvs=export_uvs,
+                export_generated_texture=generate_texture,
+                texture_size_x_override=texture_size_x_override,
+                texture_size_y_override=texture_size_y_override,
+                use_main_object_as_bone=use_main_object_as_bone,
+            )
+            if element is not None:
+                root_elements.append(element)
     else:
         # ===================================
         # normal export geometry tree
@@ -1876,6 +1898,7 @@ def save_objects(
             json.dump(animations_dict, f, separators=(",", ":"), indent=indent)
     
     if len(root_elements) == 0:
-        return {"FINISHED"}, {"WARNING"}, f"Exported to {filepath} (Warn: No objects exported)"
+        status = {"WARNING"}
+        return {"FINISHED"}, status, f"Exported to {filepath} (Warn: No objects exported)"
     else:
-        return {"FINISHED"}, {"INFO"}, f"Exported to {filepath}"
+        return {"FINISHED"}, status, f"Exported to {filepath}"

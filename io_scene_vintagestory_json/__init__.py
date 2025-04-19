@@ -108,7 +108,10 @@ def run_export(
         if args["texture_size_y_override"] == 0:
             args["texture_size_y_override"] = None
     
-    result, msg_type, msg = export_vintagestory_json.save_objects(**args)
+    result, msg_type, msg = export_vintagestory_json.save_objects(
+        logger=op,
+        **args,
+    )
 
     if "FINISHED" in result:
         op.report(msg_type, msg)
