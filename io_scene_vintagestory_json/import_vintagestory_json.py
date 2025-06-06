@@ -249,26 +249,31 @@ def parse_element(
                         ymax = 0.0
                     
                     # write uv coords based on rotation
+                    rotation = 0
+                    if "rotation" in face_uv:
+                        rotation = face_uv["rotation"]
+                    if uv_direction == "down":
+                        rotation = (rotation + 180) % 360
                     k = face.loop_start
-                    if "rotation" not in face_uv or face_uv["rotation"] == 0:
+                    if rotation == 0:
                         uv_layer[k].uv[0:2] = xmax, ymin
                         uv_layer[k+1].uv[0:2] = xmax, ymax
                         uv_layer[k+2].uv[0:2] = xmin, ymax
                         uv_layer[k+3].uv[0:2] = xmin, ymin
 
-                    elif face_uv["rotation"] == 90:
+                    elif rotation == 90:
                         uv_layer[k].uv[0:2] = xmax, ymax
                         uv_layer[k+1].uv[0:2] = xmin, ymax
                         uv_layer[k+2].uv[0:2] = xmin, ymin
                         uv_layer[k+3].uv[0:2] = xmax, ymin
 
-                    elif face_uv["rotation"] == 180:
+                    elif rotation == 180:
                         uv_layer[k].uv[0:2] = xmin, ymax
                         uv_layer[k+1].uv[0:2] = xmin, ymin
                         uv_layer[k+2].uv[0:2] = xmax, ymin
                         uv_layer[k+3].uv[0:2] = xmax, ymax
 
-                    elif face_uv["rotation"] == 270:
+                    elif rotation == 270:
                         uv_layer[k].uv[0:2] = xmin, ymin
                         uv_layer[k+1].uv[0:2] = xmax, ymin
                         uv_layer[k+2].uv[0:2] = xmax, ymax
