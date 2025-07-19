@@ -207,3 +207,23 @@ Known Issues (TODO):
 - Cannot properly export animations after rotating model 90 deg
   (need to carry and apply 90 deg rotations)
 - Will not export bone with no child cubes (need to insert dummy cube)
+
+
+# Migrating from old animation pose marker metadata
+Old versions before 0.7.0 used pose markers to set animation metadata.
+Newer version uses an N-panel gui and custom field stored on action objects.
+To migrate old pose marker metadata, run the script below in the blender
+file's scripting window, which adds the custom fields to action objects:
+
+```python
+import bpy
+
+for action in bpy.data.actions:
+    for marker in action.pose_markers:
+        if marker.name.startswith("onActivityStopped_"):
+            on_activity_stopped = marker.name[18:]
+            action["on_activity_stopped"] = on_activity_stopped
+        elif marker.name.startswith("onAnimationEnd_"):
+            on_animation_end = marker.name[15:]
+            action["on_animation_end"] = on_animation_end
+```

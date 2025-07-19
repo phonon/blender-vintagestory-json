@@ -450,33 +450,15 @@ def parse_animation(
     action = bpy.data.actions.new(name=name)
     action.use_fake_user = True # prevents deletion on file save
 
-    # flag to repeat animation (insert duplicate keyframe at end)
-    repeat_animation = False
-
-    # add special marker for onActivityStopped and onAnimationEnd
-    num_frames = e.get("quantityframes") or 0
+    # add onActivityStopped and onAnimationEnd metadata
     if "onAnimationEnd" in e:
-        marker = action.pose_markers.new(name="onAnimationEnd_{}".format(e["onAnimationEnd"]))
-        marker.frame = num_frames - 1
-        if e["onAnimationEnd"].lower() != "hold": # death animations hold on finish
-            repeat_animation = True
+        action["on_animation_end"] = e["onAnimationEnd"]
     if "onActivityStopped" in e:
-        marker = action.pose_markers.new(name="onActivityStopped_{}".format(e["onActivityStopped"]))
-        marker.frame = num_frames + 20
-    
+        action["on_activity_stopped"] = e["onActivityStopped"]
+
     # load keyframe data
     animation_adapter = animation.AnimationAdapter(action, name=name)
-
-    # insert first keyframe at end to properly loop
     keyframes = e["keyframes"].copy()
-    if repeat_animation and len(keyframes) > 0 and num_frames > 0:
-        # make copy of frame 0 and insert at num_frames-1
-        keyframe_0_copy = {
-            "frame": num_frames - 1,
-            "elements": keyframes[0]["elements"],
-        }
-        keyframes.append(keyframe_0_copy)
-    
     for keyframe in keyframes:
         frame = keyframe["frame"]
         for bone_name, data in keyframe["elements"].items():

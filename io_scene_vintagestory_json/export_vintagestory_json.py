@@ -1248,17 +1248,14 @@ def save_all_animations(
 
         # action metadata
         action_name = action.name
-        quantity_frames = None
         on_activity_stopped = "EaseOut" # default
-        on_animation_end = "Repeat"     # default
+        on_animation_end = "PlayTillEnd" # default
 
-        # parse metadata from pose markers
-        for marker in action.pose_markers:
-            if marker.name.startswith("onActivityStopped_"):
-                on_activity_stopped = marker.name[18:]
-            elif marker.name.startswith("onAnimationEnd_"):
-                quantity_frames = marker.frame + 1
-                on_animation_end = marker.name[15:]
+        # parse metadata from action
+        if "on_activity_stopped" in action:
+            on_activity_stopped = action["on_activity_stopped"]
+        if "on_animation_end" in action:
+            on_animation_end = action["on_animation_end"]
         
         # load keyframe data
         animation_adapter = animation.AnimationAdapter(
@@ -1312,12 +1309,11 @@ def save_all_animations(
         # convert from Blender bone format to Vintage story format
         keyframes = animation_adapter.create_vintage_story_keyframes(bone_hierarchy)
         
-        # if quantity frames not set from marker metadata, set to last keyframe + 1 (starts at 0)
-        if quantity_frames is None:
-            if len(keyframes) > 0:
-                quantity_frames = int(keyframes[-1]["frame"]) + 1
-            else:
-                quantity_frames = 0
+        # set frame count to last keyframe + 1 (starts at 0)
+        if len(keyframes) > 0:
+            quantity_frames = int(keyframes[-1]["frame"]) + 1
+        else:
+            quantity_frames = 0
         
         # create exported animation
         action_export = {

@@ -320,3 +320,69 @@ class OpAssignRename(bpy.types.Operator):
                 region.tag_redraw()
 
         return {"FINISHED"}
+
+
+class OpActionOnAnimationEnd(bpy.types.Operator):
+    """Assign animation action's `on_animation_end` property."""
+    bl_idname = "vintagestory.action_on_animation_end"
+    bl_label = "On Animation End"
+    bl_options = {"REGISTER", "UNDO"}
+
+    on_animation_end: bpy.props.EnumProperty(
+        name="Animation End",
+        description="Behavior on animation end",
+        items=[
+            ("EaseOut", "EaseOut", "Ease out animation"),
+            ("Repeat", "Repeat", "Repeat animation"),
+            ("Stop", "Stop", "Stop animation"),
+            ("Hold", "Hold", "Hold animation at last frame"),
+        ],
+    )
+
+    def execute(self, context):
+        args = self.as_keywords()
+
+        # unpack args
+        prop = args.get("on_animation_end")
+
+        action = context.active_action
+        if not action:
+            self.report({"ERROR"}, "No active action")
+            return {"CANCELLED"}
+
+        action["on_animation_end"] = prop
+
+        return {"FINISHED"}
+
+
+class OpActionOnActivityStopped(bpy.types.Operator):
+    """Assign animation action's `on_activity_stopped` property."""
+    bl_idname = "vintagestory.action_on_activity_stopped"
+    bl_label = "On Activity Stopped"
+    bl_options = {"REGISTER", "UNDO"}
+
+    on_activity_stopped: bpy.props.EnumProperty(
+        name="Activity Stopped",
+        description="Behavior on activity stopped",
+        items=[
+            ("PlayTillEnd", "PlayTillEnd", "Play animation till end"),
+            ("EaseOut", "EaseOut", "Ease out animation"),
+            ("Stop", "Stop", "Immediately stop animation"),
+            ("Rewind", "Rewind", "Rewind animation to start"),
+        ],
+    )
+
+    def execute(self, context):
+        args = self.as_keywords()
+
+        # unpack args
+        prop = args.get("on_activity_stopped")
+
+        action = context.active_action
+        if not action:
+            self.report({"ERROR"}, "No active action")
+            return {"CANCELLED"}
+
+        action["on_activity_stopped"] = prop
+
+        return {"FINISHED"}

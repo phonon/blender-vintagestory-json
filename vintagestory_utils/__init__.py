@@ -328,6 +328,80 @@ class VINTAGESTORY_PT_panel_io_tools(bpy.types.Panel):
             text="Export Highlighted Collections",
         )
 
+# =============================================================================
+# Animation settings (N-panel in Action Editor)
+# =============================================================================
+
+class VINTAGESTORY_PT_panel_animation_settings(bpy.types.Panel):
+    """Vintagestory animation settings in action editor N-panel.
+    """
+    bl_idname = "VINTAGESTORY_PT_panel_animation_settings"
+    bl_space_type = "DOPESHEET_EDITOR"
+    bl_region_type = "UI"
+    bl_category = "VintageStory"
+    bl_label = "VintageStory Animation"
+
+    # for viewing object custom properties
+    _context_path = "object"
+    _property_type = bpy.types.Object
+
+    @classmethod
+    def poll(cls, context):
+        return context.active_action is not None
+    
+    def draw(self, context):
+        layout = self.layout
+        action = context.active_action
+        
+        if not action:
+            layout.label(text="No action selected")
+            return
+        
+        print(action)
+
+        # operator: make selected armature bones rotation mode XZY (default VS mode)
+        layout.operator(
+            operator="vintagestory.make_bones_xzy",
+            icon="GROUP_BONE",
+            text="Make Bones XZY",
+        )
+
+        layout.separator()
+
+        # Set OnAnimationEnd animation setting
+        row = layout.row()
+        split = row.split(factor=0.5)
+
+        left_col  = split.column(align=True)
+        right_col = split.column(align=True)
+                
+        left_col.alignment  = "RIGHT"
+        right_col.alignment = "EXPAND"
+
+        left_col.label(text="Animation End")
+        right_col.operator_menu_enum(
+            operator="vintagestory.action_on_animation_end",
+            property="on_animation_end",
+            text=action["on_animation_end"] if "on_animation_end" in action else "",
+        )
+
+        # Set OnActivityStopped animation setting
+        row = layout.row()
+        split = row.split(factor=0.5)
+
+        left_col  = split.column(align=True)
+        right_col = split.column(align=True)
+                
+        left_col.alignment  = "RIGHT"
+        right_col.alignment = "EXPAND"
+
+        left_col.label(text="Activity Stopped")
+        right_col.operator_menu_enum(
+            operator="vintagestory.action_on_activity_stopped",
+            property="on_activity_stopped",
+            text=action["on_activity_stopped"] if "on_activity_stopped" in action else "",
+        )
+
 def add_submenu(self, context):
     self.layout.separator()
     self.layout.menu(VIEW3D_MT_vintagestory_submenu.bl_idname, icon="MESH_CUBE")
@@ -349,6 +423,8 @@ classes = [
     animation.OpAssignStepParentConstraint,
     animation.OpRemoveStepParentConstraint,
     animation.OpAssignRename,
+    animation.OpActionOnAnimationEnd,
+    animation.OpActionOnActivityStopped,
     texture.OpAssignGlow,
     texture.OpUVCuboidUnwrap,
     texture.OpUVPixelUnwrap,
@@ -360,6 +436,7 @@ classes = [
     VINTAGESTORY_PT_panel_texture_tools,
     VINTAGESTORY_PT_panel_animation_tools,
     VINTAGESTORY_PT_panel_io_tools,
+    VINTAGESTORY_PT_panel_animation_settings,
 ]
 
 def register():

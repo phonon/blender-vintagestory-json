@@ -27,6 +27,7 @@ import math
 from mathutils import Vector, Euler, Quaternion, Matrix
 import numpy as np
 
+
 RAD_TO_DEG = 180.0 / math.pi
 
 ROTATION_MODE_EULER = 0
@@ -218,7 +219,7 @@ class KeyframeAdapter():
             keyframe["stretchZ"] = scale.x
 
 
-    def add_rotation_keyframes(self, bone_name, frames, rotations, on_animation_end=""):
+    def add_rotation_keyframes(self, bone_name, frames, rotations):
         """Add rotation keyframes, does conversion to y-up.
         """
         for frame, rot in zip(frames, rotations):
@@ -226,20 +227,9 @@ class KeyframeAdapter():
             keyframe["rotationX"] = rot.y * RAD_TO_DEG
             keyframe["rotationY"] = rot.z * RAD_TO_DEG
             keyframe["rotationZ"] = rot.x * RAD_TO_DEG
-        
-        if on_animation_end == "repeat" and len(frames) > 0:
-            # force last frame rotation to be same as first frame
-            # otherwise vs will try to interpolate from two far away angles
-            # causing a weird "twisting" effect
-            keyframe_start = self.get_bone_keyframe(bone_name, frames[0])
-            keyframe_end = self.get_bone_keyframe(bone_name, frames[-1])
-
-            keyframe_end["rotationX"] = keyframe_start["rotationX"]
-            keyframe_end["rotationY"] = keyframe_start["rotationY"]
-            keyframe_end["rotationZ"] = keyframe_start["rotationZ"]
 
     
-    def add_rotation_keyframes_version_0(self, bone_name, frames, rotations, on_animation_end=""):
+    def add_rotation_keyframes_version_0(self, bone_name, frames, rotations):
         """Add rotation keyframes, does conversion to y-up.
         Also does built-in "shortest euler angle tracing" where keyframe
         rotations are modified to try and minimize max euler angle changes
@@ -323,17 +313,6 @@ class KeyframeAdapter():
             prev_rx = rx
             prev_ry = ry
             prev_rz = rz
-        
-        if on_animation_end == "repeat" and len(frames) > 0:
-            # force last frame rotation to be same as first frame
-            # otherwise vs will try to interpolate from two far away angles
-            # causing a weird "twisting" effect
-            keyframe_start = self.get_bone_keyframe(bone_name, frames[0])
-            keyframe_end = self.get_bone_keyframe(bone_name, frames[-1])
-
-            keyframe_end["rotationX"] = keyframe_start["rotationX"]
-            keyframe_end["rotationY"] = keyframe_start["rotationY"]
-            keyframe_end["rotationZ"] = keyframe_start["rotationZ"]
 
 
 class AnimationAdapter():
@@ -372,7 +351,6 @@ class AnimationAdapter():
         action,
         name=None,
         armature=None,
-        on_animation_end="repeat",
         rotate_shortest_distance=True,
         animation_version_0=False,
     ):
@@ -391,9 +369,6 @@ class AnimationAdapter():
         # map of bone name => rotation mode
         # ("rotation_euler" or "rotation_quaternion")
         self.bone_rotation_mode = {}
-
-        # vintagestory animation end handling
-        self.on_animation_end = on_animation_end.lower()
 
         # set rotate shortest distance flags for euler keyframes,
         # this makes ingame rotation look closer to quaternion interpolation.
@@ -640,7 +615,6 @@ class AnimationAdapter():
                         output_bone_name,
                         frames, 
                         rotation_keyframes,
-                        self.on_animation_end,
                     )
 
                     # animation version 0: need to convert between vintagestory
@@ -662,7 +636,6 @@ class AnimationAdapter():
                         output_bone_name,
                         frames, 
                         rotation_keyframes,
-                        self.on_animation_end,
                     )
                     rotation_matrix_cache = None
             else:
