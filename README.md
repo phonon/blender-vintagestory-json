@@ -49,20 +49,11 @@ Export Guide/Notes
        will be the object that acts as the bone, the "bone object".
        Otherwise, a random child will be chosen. The other children of
        the bone will be parented to the "bone object" in the exported .json.
-- **Animation metadata**: Animation metadata uses Action pose markers.
-  First enable these in the Action Editor from the menu
-  **Marker > Show Pose Markers**
-    - **"onAnimationEnd" + "quantityFrames"**: Put a pose marker named
-      "onAnimationEnd_{Action}" at the frame where the animation should end.
-      "quantityFrames" will be that (frame + 1), with the assumption
-      animations start at frame 0. "onAnimationEnd" will be the {Action},
-      e.g. "onAnimationEnd_Stop" at frame 119 will generate keys:
-        - "onAnimationEnd": "Stop"
-        - "quantityFrames": 120
-    - **"onActivityStopped"**: Put a pose marker anywhere named
-      "onActivityStopped_{Action}". e.g. "onActivityStopped_PlayTillEnd"
-      will generate key:
-        - "onActivityStopped": "PlayTillEnd"
+- **Animation metadata**: Animation metadata is set in action's N-panel:
+  In the `Dope Sheet` > `Action Editor` ui, create or select an action,
+  press `N` to view the panel on the right side of the window. There will
+  be a tab labelled "VintageStory" which contains animation utils and
+  dropdown selection for animation end and activity stopped metadata.
 - **Generating solid color textures:** By default, the exporter will
   generate a texture containing all solid material colors. So you can
   texture using just materials + colors without UV mapping or a texture
