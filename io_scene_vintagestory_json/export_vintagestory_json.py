@@ -1262,7 +1262,6 @@ def save_all_animations(
             action=action,
             name=action_name,
             armature=armature,
-            on_animation_end=on_animation_end,
             rotate_shortest_distance=rotate_shortest_distance,
             animation_version_0=animation_version_0,
         )
