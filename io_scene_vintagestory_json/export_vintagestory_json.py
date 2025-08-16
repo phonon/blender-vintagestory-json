@@ -1248,8 +1248,8 @@ def save_all_animations(
 
         # action metadata
         action_name = action.name
-        on_activity_stopped = "EaseOut" # default
-        on_animation_end = "PlayTillEnd" # default
+        on_activity_stopped = "PlayTillEnd" # default
+        on_animation_end = "EaseOut" # default
 
         # parse metadata from action
         if "on_activity_stopped" in action:
