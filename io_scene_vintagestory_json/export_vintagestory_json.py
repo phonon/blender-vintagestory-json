@@ -1478,6 +1478,7 @@ def save_objects(
     texture_folder="",
     color_texture_filename="",
     export_uvs=True,
+    skip_texture_export=False,
     minify=False,
     decimal_precision=-1,
     export_armature=True,
@@ -1521,6 +1522,8 @@ def save_objects(
         Name of exported color texture file.
     - export_uvs:
         Export object uvs.
+    - skip_texture_export:
+        Skip exporting texture paths and sizes.
     - minify:
         Minimize output file size (write into single line, remove spaces, ...)
     - decimal_precision:
@@ -1627,9 +1630,9 @@ def save_objects(
             for bone in root_bones:
                 export_objects.append(bone_hierarchy[bone.name].main)
     
-    # ===================================
+    # =========================================================================
     # export by armature
-    # ===================================
+    # =========================================================================
     if export_armature and armature is not None:
         for root_bone in root_bones:
             element = save_objects_by_armature(
@@ -1649,9 +1652,9 @@ def save_objects(
             if element is not None:
                 root_elements.append(element)
     else:
-        # ===================================
+        # =====================================================================
         # normal export geometry tree
-        # ===================================
+        # =====================================================================
         for obj in export_objects:
             if skip_disabled_render and obj.hide_render:
                 continue
@@ -1678,9 +1681,9 @@ def save_objects(
                 else:
                     root_elements.append(element)
     
-    # ===========================
-    # generate color texture image
-    # ===========================
+    # =========================================================================
+    # Color texture image generation
+    # =========================================================================
     if generate_texture:
         # default, get colors from all materials in file
         if model_colors is None:
@@ -1723,31 +1726,32 @@ def save_objects(
             model_json["textureSizes"]["0"] = [16, 16]
             model_json["textures"]["0"] = posixpath.join(texture_folder, color_texture_filename)
     
-    # ===========================
-    # process face texture paths
+    # =========================================================================
+    # Texture paths and sizes
     # convert blender path names "//folder\tex.png" -> "{texture_folder}/tex"
     # add textures indices for textures, and create face mappings like "#1"
-    # note: #0 id reserved for generated color texture
-    # ===========================
-    texture_refs = {} # maps blender path name -> #n identifiers
-    for material in model_textures.values():
-        texture_filename = material.texture_path
-        if texture_filename[0:2] == "//":
-            texture_filename = texture_filename[2:]
-        texture_filename = texture_filename.replace("\\", "/")
-        texture_filename = os.path.split(texture_filename)[1]
-        texture_filename = os.path.splitext(texture_filename)[0]
-        
-        texture_refs[material.name] = "#" + material.name
-        model_json["textures"][material.name] = posixpath.join(texture_folder, texture_filename)
-        
-        tex_size_x = material.texture_size[0] if texture_size_x_override is None else texture_size_x_override
-        tex_size_y = material.texture_size[1] if texture_size_y_override is None else texture_size_y_override
+    # NOTE: #0 id reserved for generated color texture
+    # =========================================================================
+    if not skip_texture_export:
+        texture_refs = {} # maps blender path name -> #n identifiers
+        for material in model_textures.values():
+            texture_filename = material.texture_path
+            if texture_filename[0:2] == "//":
+                texture_filename = texture_filename[2:]
+            texture_filename = texture_filename.replace("\\", "/")
+            texture_filename = os.path.split(texture_filename)[1]
+            texture_filename = os.path.splitext(texture_filename)[0]
+            
+            texture_refs[material.name] = "#" + material.name
+            model_json["textures"][material.name] = posixpath.join(texture_folder, texture_filename)
+            
+            tex_size_x = material.texture_size[0] if texture_size_x_override is None else texture_size_x_override
+            tex_size_y = material.texture_size[1] if texture_size_y_override is None else texture_size_y_override
 
-        model_json["textureSizes"][material.name] = [tex_size_x, tex_size_y]
+            model_json["textureSizes"][material.name] = [tex_size_x, tex_size_y]
 
     # =========================================================================
-    # origin shift post-processing
+    # Origin shift post-processing
     # =========================================================================
     if translate_origin is not None:
         translate_origin = to_y_up(translate_origin)
@@ -1757,12 +1761,12 @@ def save_objects(
             element["from"] = translate_origin + element["from"]
             element["rotationOrigin"] = translate_origin + element["rotationOrigin"]  
     
-    # ===========================
-    # all object post processing
+    # =========================================================================
+    # All object post processing
     # 1. convert numpy to python list
     # 2. map solid color face uv -> location in generated texture
     # 3. disable faces with user specified disable texture
-    # ===========================
+    # =========================================================================
     def final_element_processing(element):
         # convert numpy to python list
         element["to"] = element["to"].tolist()
@@ -1790,9 +1794,9 @@ def save_objects(
     for element in root_elements:
         final_element_processing(element)
     
-    # ===========================
+    # =========================================================================
     # convert groups
-    # ===========================
+    # =========================================================================
     groups_export = []
     for g in groups:
         groups_export.append({
@@ -1805,9 +1809,9 @@ def save_objects(
     model_json["elements"] = root_elements
     model_json["groups"] = groups_export
 
-    # ===========================
+    # =========================================================================
     # export animations
-    # ===========================
+    # =========================================================================
     if export_animations:
         animations = save_all_animations(
             bone_hierarchy,
@@ -1817,9 +1821,9 @@ def save_objects(
         if len(animations) > 0:
             model_json["animations"] = animations
 
-    # ===========================
+    # =========================================================================
     # minification options to reduce .json file size
-    # ===========================
+    # =========================================================================
     indent = 2
     if minify == True:
         # remove json indent + newline

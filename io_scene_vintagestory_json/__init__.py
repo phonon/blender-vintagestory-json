@@ -241,6 +241,12 @@ class ExportVintageStoryJson(Operator, ExportHelper):
         default=False,
     )
 
+    skip_texture_export: BoolProperty(
+        name="Skip Texture Export",
+        description="Skip exporting texture paths and sizes (for models using in-game generated textures)",
+        default=False,
+    )
+
     # ================================
     # minify options
     minify: BoolProperty(
@@ -564,6 +570,7 @@ class VINTAGESTORY_PT_export_textures(bpy.types.Panel):
         layout.prop(operator, "use_only_exported_object_colors")
         layout.prop(operator, "texture_size_x_override")
         layout.prop(operator, "texture_size_y_override")
+        layout.prop(operator, "skip_texture_export")
 
 
 # export options panel for minifying .json output
