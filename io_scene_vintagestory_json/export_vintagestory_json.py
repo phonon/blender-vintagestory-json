@@ -1471,12 +1471,12 @@ def save_objects(
     objects=[],
     skip_disabled_render=True,
     translate_origin=None,
+    texture_folder="",
     generate_texture=True,
     use_only_exported_object_colors=False,
+    color_texture_filename="",
     texture_size_x_override=None, # override texture image size x
     texture_size_y_override=None, # override texture image size y
-    texture_folder="",
-    color_texture_filename="",
     export_uvs=True,
     skip_texture_export=False,
     minify=False,
@@ -1495,62 +1495,73 @@ def save_objects(
     cuboid format, uvs, and handles texture read and generation.
     Will save .json file to output path because this needs to save both
     json containing model structure and textures generated during export.
-    If need ever arises, make this return (model, textures) and separate
-    func that saves to files.
+    
+    TODO: If need arises, make this return (model, textures) and separate
+    wrapper func that saves to files.
 
-    Inputs:
-    - filepath:
+    Parameters
+    ----------
+    filepath : str
         Output file path name. Returns error if file is "" or None.
-    - object:
+    objects : list of bpy.types.Object
         Iterable collection of Blender objects. Returns warning if empty.
-    - skip_disabled_render:
+    skip_disabled_render : bool
         Skip objects with disable render (hide_render) flag
-    - translate_origin:
+    translate_origin : list[float]
         New origin to shift, None for no shift, [x, y, z] list in Blender
         coords to apply shift
-    - generate_texture:
+    texture_folder : str
+        Output texture subpath, for typical "item/texture_name" the texture
+        folder would be "item".
+    generate_texture : bool
         Generate texture from solid material colors. By default, creates
         a color texture from all materials in file (so all groups of objects
         can share the same texture file).
-    - use_only_exported_object_colors:
+    use_only_exported_object_colors : bool
         Generate texture colors from only exported objects instead of default
         using all file materials.
-    - texture_folder:
-        Output texture subpath, for typical "item/texture_name" the texture
-        folder would be "item".
-    - color_texture_filename:
-        Name of exported color texture file.
-    - export_uvs:
-        Export object uvs.
-    - skip_texture_export:
+    color_texture_filename : str
+        Name of exported generated color texture file.
+    export_uvs : bool
+        Export object uvs (required for textures to render properly).
+    skip_texture_export : bool
         Skip exporting texture paths and sizes.
-    - minify:
+    minify : bool
         Minimize output file size (write into single line, remove spaces, ...)
-    - decimal_precision:
-        Number of digits after decimal to keep in numbers. Set to -1 to disable.
-    - export_armature:
+    decimal_precision : int
+        Number of digits after decimal to keep in numbers. Set to -1 to
+        disable.
+    export_armature : bool
         Export by bones, makes custom hierarchy based on bone tree and
         attaches generated elements to their bone parent.
-    - export_animations:
+    export_animations : bool
         Export bones and animation actions.
-    - use_main_object_as_bone:
+    generate_animations_file : bool
+        Generate separate animations file, e.g. "model.json" and
+        "model_animations.json".
+    use_main_object_as_bone : bool
         Detect if bone and same named parent object have same transform
         and collapse into a single object (to reduce element count).
-    - use_step_parent:
+    use_step_parent : bool
         Transform root elements relative to their step parent element, so
         elements are correctly attached in game.
         TODO: make this flag actually work, right now automatically enabled
-    - rotate_shortest_distance:
+    rotate_shortest_distance : bool
         Use shortest distance rotation interpolation for animations.
         This sets the "rotShortestDistance_" flags in the output keyframes.
-    - logger:
-        Optional blender object that can use .report(type, message) to
-        report messages to the user, e.g. warning messages.
-    Returns:
-    Tuple of (result, message_type, message):
-    - result: set of result types, e.g. {"FINISHED"} or {"CANCELLED"}
-    - message_type: set of message types, e.g. {"WARNING"} or {"INFO"}
-    - message: string message, for use in `op.report(type, message)`.
+    animation_version_0 : bool
+        Use VintageStory animation version 0 format incompatible with Blender,
+        which uses which uses R*T*v format and additive bone euler rotations.
+    logger : Optional bpy.types.Operator
+        Optional blender object that can use `.report(type, message)` to
+        report warning or error messages to the user.
+    
+    Returns
+    -------
+    Tuple : (result, message_type, message)
+        - result: set of result types, e.g. {"FINISHED"} or {"CANCELLED"}
+        - message_type: set of message types, e.g. {"WARNING"} or {"INFO"}
+        - message: string message, for use in `op.report(type, message)`.
     """
     if filepath == "" or filepath is None:
         return {"CANCELLED"}, {"ERROR"}, "No output file path specified"

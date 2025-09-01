@@ -8,7 +8,7 @@ Supports import/export uvs. This addon can export solid material colors
 packed into an auto-generated image texture (alongside normal textures),
 so you can mix textures and solid face colors on Blender meshes.
 
-Tested on Blender 3.3 LTS.
+Tested on Blender 4.5 LTS.
 
 
 Installation
@@ -99,6 +99,7 @@ Export Options
 |----------|------------|------------- |
 | Selection Only | False | If True, export only selected objects |
 | Skip Disabled Render | True | If True, skip objects with render disabled (camera icon in objects list) |
+| Use Step Parent | True | If True, transform objects relative to step parents (e.g. for clothing) |
 | Translate Origin | True | Fixed translation of coordinates by `(x,y,z)` (in Blender coordinates) |
 | Translate X | 8.0 | `x` export recenter coordinate |
 | Translate Y | 8.0 | `y` export recenter coordinate |
@@ -110,10 +111,15 @@ Export Options
 | Only Use Exported Object Colors | False | When exporting auto-generated color texture, only use material colors on exported objects (instead of all materials in file). |
 | Texture Size X Override | 0 | Override texture size x in UV export. Sometimes model UV texture size needs to be different than image size (e.g. composing texture skins for seraph). 0 to ignore.
 | Texture Size Y Override | 0 | Override texture size y in UV export. Sometimes model UV texture size needs to be different than image size (e.g. composing texture skins for seraph). 0 to ignore.
+| Skip Texture Export | False | If true, skip texture and texture size exports (for models using in-game generated textures) |
 | Minify .json | False | Enable options to reduce .json file size |
 | Decimal Precision | 8 | Number of digits after decimal point in output .json (-1 to disable) |
 | Export Armature | True | Export objects using armature hierarchy, auto generates bone elements |
 | Export Animations | True | Export animations |
+| Generate Animations File | False | Generate separate `model_animations.json` file containing animations |
+| Use Main Object as Bone | True | Merges bone and object if they share same name and transform (for vanilla model compatibility) |
+| Rotate Shortest Distance | False | Makes animations rotate shortest dist, similar to quarternion slerp |
+| Use Animation Version 0 | False | Use default VintageStory animation format incompatible with Blender | 
 | Run Post Export Script | False | If True, automatically runs a python script after export (see details below) |
 | Post Export Script |  | Name of post export script, e.g. `postprocess.py` |
 
@@ -181,14 +187,38 @@ This will also add a utils panel in the "N Panel" named "VintageStory"
 VintageStory-specific utility operators for UVs, texturing, and 
 animations.
 
+### Model Tools
+|  Operator  | Description  |
+|------------|------------- |  
+| Duplicate Skin Part | Duplicates selected object and its collection into new collection (for faster clothes and skin part making) |
+| Cleanup Rotation | Cleanup edit mode rotations and convert into object mode rotations |
+
+### Texture Tools
 |  Operator  | Description  |
 |------------|------------- |
 | Cuboid UV Unwrap | UV unwraps selected objects into similar format used by base game, with selectable front face |
 | Pixel UV Unwrap | UV unwraps all faces into a square (so they can share a single pixel) |
 | UV Pack | Automatic UV packing that preserves size ratios and clamps to pixel corners with adjustable UV island pixel padding |   
+| Enable Material | Enable material face export |
+| Disable Material | Disable material face export (disable faces by assigning disabled material) |
+| Glow | Set object glow (sets glow on all faces on object) |
+
+### Animation Tools
+|  Operator  | Description  |
+|------------|------------- | 
 | Make Bones XZY | Set all bones in armature to XZY Euler (VintageStory format) |
 | Auto Assign Bones | Assign selected objects parent to closest Armature bone |
 | Step Parent Name | Set selected objects `stepParentName` |
+| Assign Step Parent Constraint | Assigns bone constraint to object's step parent in Armature |
+| Remove Step Parent Constraint | Removes bone constraint to Armature step parent |
+| Rename on Export | Renames object on export (sometimes needed for proper animation or step parent mapping) |
+
+### Export Tools
+|  Operator  | Description  |
+|------------|------------- | 
+| Quick Export | Export scene using default settings in export menu and blender filename |
+| Export Selected Collection | Exported selected object and its collection in scene |
+| Export Highlighted Collections | Exported highlighted collections in View Layer menu |
 
 
 Known Issues (TODO):
