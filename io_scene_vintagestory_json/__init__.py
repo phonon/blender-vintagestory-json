@@ -13,7 +13,7 @@ import importlib
 importlib.reload(export_vintagestory_json) 
 importlib.reload(import_vintagestory_json)
 
-class ImportVintageStoryJSON(Operator, ImportHelper):
+class ImportVintageStoryJson(Operator, ImportHelper):
     """Import VintageStory .json file"""
     bl_idname = "vintagestory.import_json"
     bl_label = "Import a VintageStory .json model"
@@ -132,7 +132,7 @@ def run_export(
     return result
 
 
-class ExportVintageStoryJSON(Operator, ExportHelper):
+class ExportVintageStoryJson(Operator, ExportHelper):
     """Exports scene cuboids as VintageStory .json object"""
     bl_idname = "vintagestory.export_json"
     bl_label = "Export as VintageStory .json"
@@ -349,6 +349,38 @@ class ExportVintageStoryJSON(Operator, ExportHelper):
                 prop_key = "vintagestory_export_" + prop
                 if prop_key in bpy.context.scene:
                     setattr(self, prop, bpy.context.scene[prop_key])
+
+
+class ExportVintageStoryJsonQuick(bpy.types.Operator):
+    """Export using default saved settings in export menu into same filename
+    as this blender file."""
+    bl_idname = "vintagestory.export_json_quick"
+    bl_label = "Export quick to VintageStory .json"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        # gather export args stored in scene
+        args = {}
+        for prop, val in bpy.context.scene.items():
+            if "vintagestory_export_" in prop:
+                args[prop[20:]] = val
+        
+        if "selection_only" in args and args["selection_only"] == True:
+            args["objects"] = export_vintagestory_json.filter_root_objects(bpy.context.selected_objects)
+        else:
+            args["objects"] = export_vintagestory_json.filter_root_objects(bpy.context.scene.collection.all_objects[:])
+
+        # get blender filepath
+        # https://github.com/dfelinto/blender/blob/master/release/scripts/modules/bpy_extras/io_utils.py#L56
+        import os
+        blend_filepath = context.blend_data.filepath
+        filename = os.path.splitext(os.path.basename(blend_filepath))[0]
+        save_dir = os.path.dirname(blend_filepath) if blend_filepath is not None else bpy.path.abspath("//")
+        save_filepath = os.path.join(save_dir, f"{filename}.json")
+
+        args["filepath"] = save_filepath
+
+        return run_export(self, **args)
 
 
 class ExportVintageStoryJsonCollection(bpy.types.Operator):
@@ -613,17 +645,18 @@ class VINTAGESTORY_PT_export_scripts(bpy.types.Panel):
 
 # add io to menu
 def menu_func_import(self, context):
-    self.layout.operator(ImportVintageStoryJSON.bl_idname, text="VintageStory (.json)")
+    self.layout.operator(ImportVintageStoryJson.bl_idname, text="VintageStory (.json)")
 
 def menu_func_export(self, context):
-    self.layout.operator(ExportVintageStoryJSON.bl_idname, text="VintageStory (.json)")
+    self.layout.operator(ExportVintageStoryJson.bl_idname, text="VintageStory (.json)")
 
 # register
 classes = [
     # OPERATORS:
     # main import/export
-    ImportVintageStoryJSON,
-    ExportVintageStoryJSON,
+    ImportVintageStoryJson,
+    ExportVintageStoryJson,
+    ExportVintageStoryJsonQuick,
     ExportVintageStoryJsonCollection,
     ExportVintageStoryJsonHighlightedCollections,
     # PANELS:

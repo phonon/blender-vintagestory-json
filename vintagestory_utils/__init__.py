@@ -316,6 +316,13 @@ class VINTAGESTORY_PT_panel_io_tools(bpy.types.Panel):
 
         # operator: export collection
         layout.operator(
+            operator="vintagestory.export_json_quick",
+            icon="EXPORT",
+            text="Quick Export",
+        )
+
+        # operator: export collection
+        layout.operator(
             operator="vintagestory.export_json_collection",
             icon="EXPORT",
             text="Export Selected Collection",
