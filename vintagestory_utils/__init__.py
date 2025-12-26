@@ -373,6 +373,13 @@ class VINTAGESTORY_PT_panel_animation_settings(bpy.types.Panel):
             text="Make Bones XZY",
         )
 
+        # operator: make all keyframes interpolation linear
+        layout.operator(
+            operator="vintagestory.make_keyframe_interpolation_linear",
+            icon="ACTION",
+            text="Make Keyframe Interpolation Linear",
+        )
+
         layout.separator()
 
         # Set OnAnimationEnd animation setting
@@ -432,6 +439,7 @@ classes = [
     animation.OpAssignRename,
     animation.OpActionOnAnimationEnd,
     animation.OpActionOnActivityStopped,
+    animation.OpMakeKeyframeInterpolationLinear,
     texture.OpAssignGlow,
     texture.OpUVCuboidUnwrap,
     texture.OpUVPixelUnwrap,

@@ -386,3 +386,26 @@ class OpActionOnActivityStopped(bpy.types.Operator):
         action["on_activity_stopped"] = prop
 
         return {"FINISHED"}
+
+
+
+class OpMakeKeyframeInterpolationLinear(bpy.types.Operator):
+    """Make all action keyframes interpolation mode linear (VintageStory uses linear)"""
+    bl_idname = "vintagestory.make_keyframe_interpolation_linear"
+    bl_label = "Make Keyframe Interpolation Linear"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        # get active action
+        action = context.active_action
+        if not action:
+            self.report({"ERROR"}, "No active action")
+            return {"CANCELLED"}
+        
+        # iterate over fcurves and keyframe points
+        for fcurve in action.fcurves:
+            for keyframe in fcurve.keyframe_points:
+                keyframe.interpolation = "LINEAR"
+
+        return {"FINISHED"}
+
