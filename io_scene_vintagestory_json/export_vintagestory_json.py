@@ -1173,10 +1173,32 @@ def get_bone_hierarchy(armature, root_bones):
     return bone_hierarchy
 
 
+def armature_pose_save(armature: bpy.types.Armature) -> dict[str, Matrix]:
+    """Save the current pose bone state of an armature.
+    Returns a dict mapping bone name to a copy of its matrix_basis.
+    """
+    saved_state = {}
+    for bone in armature.pose.bones:
+        saved_state[bone.name] = bone.matrix_basis.copy()
+    return saved_state
+
+
+def armature_pose_restore(armature: bpy.types.Armature, saved_state: dict[str, Matrix]):
+    """Restore pose bone state from a previously saved state dict.
+    """
+    for bone in armature.pose.bones:
+        if bone.name in saved_state:
+            bone.matrix_basis = saved_state[bone.name]
+    bpy.context.view_layer.update()
+
+
 def get_bone_hierarchy_from_armature(
     armature,
 ):
-    """Helper function to get bone hierarchy from Blender objects."""
+    """Helper function to get bone hierarchy from Blender objects.
+    Resets all pose bones to bind pose for export. Caller is
+    responsible for saving/restoring pose state.
+    """
 
     # reset all pose bones in armature to bind pose
     for bone in armature.pose.bones:
@@ -1612,6 +1634,9 @@ def save_objects(
     # check if any objects in scene are armatures
     scene_armatures = get_armatures_from_objects(bpy.data.objects, skip_disabled_render=skip_disabled_render)
 
+    # save initial pose state before resetting to bind pose for export
+    armature_pose_initial = None
+
     # case 1. exporting objects with step parent property, need armature
     # for performing transform offset calculations
     
@@ -1620,6 +1645,7 @@ def save_objects(
         if len(scene_armatures) > 0:
             # use first armature in scene if did not find armature from before
             armature = scene_armatures[0]
+            armature_pose_initial = armature_pose_save(armature)
             root_bones, bone_hierarchy = get_bone_hierarchy_from_armature(armature)
         else:
             status = {"WARNING"}
@@ -1632,6 +1658,7 @@ def save_objects(
         exported_armatures = get_armatures_from_objects(objects, skip_disabled_render=skip_disabled_render)
         if len(exported_armatures) > 0:
             armature = exported_armatures[0]
+            armature_pose_initial = armature_pose_save(armature)
             root_bones, bone_hierarchy = get_bone_hierarchy_from_armature(armature)
         else:
             return {"CANCELLED"}, {"WARNING"}, "No armature found for export by armature"
@@ -1908,6 +1935,10 @@ def save_objects(
         with open(animations_filepath, "w") as f:
             json.dump(animations_dict, f, separators=(",", ":"), indent=indent)
     
+    # restore armature pose state after export
+    if armature is not None and armature_pose_initial is not None:
+        armature_pose_restore(armature, armature_pose_initial)
+
     if len(root_elements) == 0:
         status = {"WARNING"}
         return {"FINISHED"}, status, f"Exported to {filepath} (Warn: No objects exported)"
