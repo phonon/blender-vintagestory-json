@@ -1,4 +1,5 @@
 import bpy
+import bmesh
 import numpy as np
 from mathutils import Matrix
 
@@ -163,5 +164,139 @@ class OpCleanupRotation(bpy.types.Operator):
             self.report({"INFO"}, f"Re-aligned {num_obj_realigned} objects")
         else:
             self.report({"INFO"}, "No objects needed realignment")
+
+        return {"FINISHED"}
+
+
+MIRROR_AXIS_ITEMS = [
+    ("X", "X", "Mirror on X axis"),
+    ("Y", "Y", "Mirror on Y axis"),
+    ("Z", "Z", "Mirror on Z axis"),
+]
+
+AXIS_INDEX = {"X": 0, "Y": 1, "Z": 2}
+
+def mirror_mesh_objects(
+    objects: list[bpy.types.Object],
+    axis: str,
+):
+    """Mirror mesh objects around world origin on the given axis.
+    Mirrors local position and rotation, then flips local mesh
+    vertices on the axis and recalculates normals. Mirrors objects with
+    parent-child relationships. (Vibed)
+
+    Parameters:
+        objects: iterable of Blender objects to mirror
+        axis: "X", "Y", or "Z"
+    Returns:
+        Number of mesh objects mirrored
+    """
+    axis_index = AXIS_INDEX[axis]
+
+    # 3x3 mirror matrix for rotation: M @ R @ M reflects a rotation
+    mirror_3x3 = Matrix.Identity(3)
+    mirror_3x3[axis_index][axis_index] = -1.0
+
+    # number of mesh objects mirrored (for logging)
+    count = 0
+
+    for obj in objects:
+        if obj.type != "MESH":
+            continue
+
+        mesh = obj.data
+
+        # mirror object local location on the axis
+        obj.location[axis_index] *= -1
+
+        # mirror rotation: new_R = M @ old_R @ M
+        if obj.rotation_mode == "QUATERNION":
+            old_rot_mat = obj.rotation_quaternion.to_matrix()
+            new_rot_mat = mirror_3x3 @ old_rot_mat @ mirror_3x3
+            obj.rotation_quaternion = new_rot_mat.to_quaternion()
+        elif obj.rotation_mode == "AXIS_ANGLE":
+            print("Warning: skipping rotation mirroring for AXIS_ANGLE rotation mode (not supported)")
+        else: # euler modes
+            old_rot_mat = obj.rotation_euler.to_matrix()
+            new_rot_mat = mirror_3x3 @ old_rot_mat @ mirror_3x3
+            obj.rotation_euler = new_rot_mat.to_euler(obj.rotation_mode)
+        
+        # mirror mesh vertices in local space on the axis
+        for v in mesh.vertices:
+            v.co[axis_index] *= -1
+
+        # recalculate normals (flipping one axis reverses face winding)
+        bm = bmesh.new()
+        bm.from_mesh(mesh)
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        bm.to_mesh(mesh)
+        bm.free()
+        mesh.update()
+
+        count += 1
+
+    bpy.context.view_layer.update()
+    return count
+
+
+class OpMirrorAll(bpy.types.Operator):
+    """Mirror all mesh objects in scene around world origin."""
+    bl_idname = "vintagestory.mirror_all"
+    bl_label = "Mirror All"
+    bl_options = {"REGISTER", "UNDO"}
+
+    axis: bpy.props.EnumProperty(
+        name="Axis",
+        description="Axis to mirror on",
+        items=MIRROR_AXIS_ITEMS,
+        default="X",
+    )
+
+    def invoke(self, context, event):
+        wm = context.window_manager
+        return wm.invoke_props_dialog(self)
+
+    def execute(self, context):
+        objects = list(bpy.context.scene.objects)
+        count = mirror_mesh_objects(objects, self.axis)
+
+        if count > 0:
+            self.report({"INFO"}, f"Mirrored {count} objects on {self.axis} axis")
+        else:
+            self.report({"INFO"}, "No mesh objects to mirror")
+
+        return {"FINISHED"}
+
+
+class OpMirrorSelected(bpy.types.Operator):
+    """Mirror selected mesh objects around world origin."""
+    bl_idname = "vintagestory.mirror_selected"
+    bl_label = "Mirror Selected"
+    bl_options = {"REGISTER", "UNDO"}
+
+    axis: bpy.props.EnumProperty(
+        name="Axis",
+        description="Axis to mirror on",
+        items=MIRROR_AXIS_ITEMS,
+        default="X",
+    )
+
+    def invoke(self, context, event):
+        wm = context.window_manager
+        return wm.invoke_props_dialog(self)
+
+    def execute(self, context):
+        objects = list(bpy.context.selected_objects)
+
+        if len(objects) == 0:
+            self.report({"WARNING"}, "No objects selected")
+            return {"CANCELLED"}
+
+        count = mirror_mesh_objects(objects, self.axis)
+
+        if count > 0:
+            self.report({"INFO"}, f"Mirrored {count} selected objects on {self.axis} axis")
+        else:
+            self.report({"INFO"}, "No mesh objects in selection")
 
         return {"FINISHED"}

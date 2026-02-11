@@ -142,6 +142,18 @@ class VINTAGESTORY_PT_panel_model_tools(bpy.types.Panel):
             icon="DRIVER_ROTATIONAL_DIFFERENCE",
             text="Cleanup Rotation",
         )
+        # operator: mirror all objects
+        layout.operator(
+            operator="vintagestory.mirror_all",
+            icon="MOD_MIRROR",
+            text="Mirror All",
+        )
+        # operator: mirror selected objects
+        layout.operator(
+            operator="vintagestory.mirror_selected",
+            icon="MOD_MIRROR",
+            text="Mirror Selected",
+        )
 
 
 # =============================================================================
@@ -431,6 +443,8 @@ classes = [
     primitive.OpPrimitiveAddOctsphere,
     model.OpDuplicateCollection,
     model.OpCleanupRotation,
+    model.OpMirrorAll,
+    model.OpMirrorSelected,
     animation.OpMakeBonesXZY,
     animation.OpAssignBones,
     animation.OpAssignStepParentName,
