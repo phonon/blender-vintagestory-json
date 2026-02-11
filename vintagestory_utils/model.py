@@ -191,6 +191,11 @@ def mirror_mesh_objects(
     Returns:
         Number of mesh objects mirrored
     """
+    # go to object mode, required to modify object and mesh
+    in_edit_mode = bpy.context.mode == "EDIT_MESH"
+    if in_edit_mode:
+        bpy.ops.object.mode_set(mode="OBJECT")
+    
     axis_index = AXIS_INDEX[axis]
 
     # 3x3 mirror matrix for rotation: M @ R @ M reflects a rotation
@@ -235,6 +240,10 @@ def mirror_mesh_objects(
 
         count += 1
 
+    # restore edit mode
+    if in_edit_mode:
+        bpy.ops.object.mode_set(mode="EDIT")
+    
     bpy.context.view_layer.update()
     return count
 

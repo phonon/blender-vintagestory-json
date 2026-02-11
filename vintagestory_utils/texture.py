@@ -1391,7 +1391,6 @@ class OpAssignGlow(bpy.types.Operator):
         return {"FINISHED"}
 
 
-
 class OpTexturePixelMode(bpy.types.Operator):
     """Make selected object textures pixel sampling mode"""
     bl_idname = "vintagestory.texture_pixel_mode"
