@@ -177,6 +177,12 @@ class VINTAGESTORY_PT_panel_texture_tools(bpy.types.Panel):
         layout = self.layout
         rna_item, context_member = rna_idprop_context_value(context, self._context_path, self._property_type)
 
+        # operator: make selected object textures pixel mode
+        layout.operator(
+            operator="vintagestory.texture_pixel_mode",
+            icon="TEXTURE",
+            text="Texture Pixel Mode",
+        )
         # operator: unwrap selected cuboid objects UVs
         layout.operator(
             operator="vintagestory.uv_cuboid_unwrap",
@@ -455,10 +461,11 @@ classes = [
     animation.OpActionOnActivityStopped,
     animation.OpMakeKeyframeInterpolationLinear,
     texture.OpAssignGlow,
+    texture.OpDisableMaterial,
+    texture.OpTexturePixelMode,
     texture.OpUVCuboidUnwrap,
     texture.OpUVPixelUnwrap,
     texture.OpUVPackSimpleBoundingBox,
-    texture.OpDisableMaterial,
     # PANELS AND MENUS
     VIEW3D_MT_vintagestory_submenu,
     VINTAGESTORY_PT_panel_model_tools,

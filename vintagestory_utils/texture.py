@@ -1389,3 +1389,53 @@ class OpAssignGlow(bpy.types.Operator):
                 region.tag_redraw()
         
         return {"FINISHED"}
+
+
+
+class OpTexturePixelMode(bpy.types.Operator):
+    """Make selected object textures pixel sampling mode"""
+    bl_idname = "vintagestory.texture_pixel_mode"
+    bl_label = "Texture Pixel Mode"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        selected = bpy.context.selected_objects
+        if len(selected) == 0:
+            self.report({"WARNING"}, "No objects selected")
+            return {"CANCELLED"}
+
+        # gather all unique materials from selected objects
+        materials = set()
+        for obj in selected:
+            if obj.type != "MESH":
+                continue
+            for slot in obj.material_slots:
+                if slot.material is not None:
+                    materials.add(slot.material)
+
+        if len(materials) == 0:
+            self.report({"WARNING"}, "No materials in selected objects")
+            return {"CANCELLED"}
+
+        count = 0
+        for mat in materials:
+            if not mat.use_nodes:
+                continue
+            for node in mat.node_tree.nodes:
+                if node.type == "TEX_IMAGE" and node.image is not None:
+                    # set texture interpolation to nearest neighbor
+                    node.interpolation = "Closest"
+                    count += 1
+        
+        # turn on corner mode snapping in uv editor
+        for screen in bpy.data.screens:
+            for area in screen.areas:
+                if area.type == "IMAGE_EDITOR":
+                    for space in area.spaces:
+                        if space.type == "IMAGE_EDITOR":
+                            space.uv_editor.pixel_round_mode = "CORNER"
+
+        self.report({"INFO"}, f"Set {count} texture(s) in {len(materials)} material(s) to pixel mode")
+
+        return {"FINISHED"}
+
