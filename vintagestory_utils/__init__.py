@@ -3,6 +3,7 @@ from . import animation
 from . import model
 from . import primitive
 from . import texture
+from . import wind
 
 # reload imported modules
 import importlib
@@ -10,6 +11,7 @@ importlib.reload(animation)
 importlib.reload(model)
 importlib.reload(primitive)
 importlib.reload(texture)
+importlib.reload(wind)
 
 def rna_idprop_context_value(context, context_member, property_type):
     """
@@ -115,7 +117,7 @@ class VIEW3D_MT_vintagestory_submenu(bpy.types.Menu):
 
 
 # =============================================================================
-# Modelling tools
+# MARK: Modelling tools
 # =============================================================================
 class VINTAGESTORY_PT_panel_model_tools(bpy.types.Panel):
     """Vintagestory tools in viewport N-panel:
@@ -157,7 +159,7 @@ class VINTAGESTORY_PT_panel_model_tools(bpy.types.Panel):
 
 
 # =============================================================================
-# UV tools
+# MARK: Texture tools
 # =============================================================================
 class VINTAGESTORY_PT_panel_texture_tools(bpy.types.Panel):
     """Vintagestory tools in viewport N-panel:
@@ -222,7 +224,7 @@ class VINTAGESTORY_PT_panel_texture_tools(bpy.types.Panel):
             layout.label(text="")
 
 # =============================================================================
-# Animation tools
+# MARK: Animation tools
 # =============================================================================
 
 class VINTAGESTORY_PT_panel_animation_tools(bpy.types.Panel):
@@ -315,6 +317,46 @@ class VINTAGESTORY_PT_panel_animation_tools(bpy.types.Panel):
             layout.label(text="")
 
 
+# =============================================================================
+# MARK: Wind tools
+# =============================================================================
+
+class VINTAGESTORY_PT_panel_wind_tools(bpy.types.Panel):
+    """Vintagestory tools in viewport N-panel:
+    Contains face wind mode tools.
+    """
+    bl_idname = "VINTAGESTORY_PT_panel_wind_tools"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "VintageStory"
+    bl_label = "Wind Tools"
+
+    # for viewing object custom properties
+    _context_path = "object"
+    _property_type = bpy.types.Object
+
+    def draw(self, context):
+        layout = self.layout
+
+        # operator: assign face wind mode
+        layout.operator(
+            operator="vintagestory.assign_wind",
+            icon="FORCE_WIND",
+            text="Assign Wind Mode",
+        )
+
+        # operator: clear face wind mode
+        layout.operator(
+            operator="vintagestory.clear_face_wind",
+            icon="PANEL_CLOSE",
+            text="Clear Face Wind Mode",
+        )
+
+
+# =============================================================================
+# MARK: Export tools
+# =============================================================================
+
 class VINTAGESTORY_PT_panel_io_tools(bpy.types.Panel):
     """Vintagestory tools in viewport N-panel:
     Contains io tools.
@@ -354,7 +396,7 @@ class VINTAGESTORY_PT_panel_io_tools(bpy.types.Panel):
         )
 
 # =============================================================================
-# Animation settings (N-panel in Action Editor)
+# MARK: Animation settings (N-panel in Action Editor)
 # =============================================================================
 
 class VINTAGESTORY_PT_panel_animation_settings(bpy.types.Panel):
@@ -466,13 +508,16 @@ classes = [
     texture.OpUVCuboidUnwrap,
     texture.OpUVPixelUnwrap,
     texture.OpUVPackSimpleBoundingBox,
+    wind.OpAssignFaceWindMode,
+    wind.OpClearFaceWindMode,
     # PANELS AND MENUS
     VIEW3D_MT_vintagestory_submenu,
     VINTAGESTORY_PT_panel_model_tools,
     VINTAGESTORY_PT_panel_texture_tools,
     VINTAGESTORY_PT_panel_animation_tools,
-    VINTAGESTORY_PT_panel_io_tools,
     VINTAGESTORY_PT_panel_animation_settings,
+    VINTAGESTORY_PT_panel_wind_tools,
+    VINTAGESTORY_PT_panel_io_tools,
 ]
 
 def register():

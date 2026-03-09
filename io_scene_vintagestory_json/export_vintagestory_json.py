@@ -62,6 +62,22 @@ CLOCKWISE_UV_ROTATION_LOOKUP = (
     (180, 90, 0, 270),
 )
 
+# This maps vintage face direction to re-indexing for blender
+# face vertex order, used for face vertex properties like wind data.
+# For example, for south face wind data
+#   blender vertex order     : w = [w0, w1, w2, w3]
+#   re-indexed vintage order : w[3], w[0], w[1], w[2] => [w3, w0, w1, w2]
+#   (format for ingame face)
+# These indices were experimentally derived ingame.
+FACE_DIRECTION_VERT_REINDEX = {
+    "north": (0, 1, 2, 3),
+    "east": (0, 1, 2, 3),
+    "south": (3, 0, 1, 2),
+    "west": (3, 0, 1, 2),
+    "up": (2, 3, 0, 1), 
+    "down": (2, 3, 0, 1),
+}
+
 def filter_root_objects(objects):
     """Get root objects (objects without parents) in scene."""
     root_objects = []
@@ -561,6 +577,9 @@ def generate_mesh_element(
     
     uv_layer = mesh.uv_layers.active.data
 
+    # wind vertex color layer (per-loop RGBA, wind_mode in R, wind_strength in G)
+    wind_color_layer = mesh.color_attributes.get("wind") if hasattr(mesh, "color_attributes") else None
+
     for i, face in enumerate(mesh.polygons):
         if i > 5: # should be 6 faces only
             print(f"WARNING: {obj} has >6 faces")
@@ -727,7 +746,20 @@ def generate_mesh_element(
                 
                 if face_uv_rotation != 0 and face_uv_rotation != 360:
                     faces[d]["rotation"] = face_uv_rotation if face_uv_rotation >= 0 else 360 + face_uv_rotation
-    
+
+        # face wind mode (float_color layer stores linear values directly)
+        if wind_color_layer is not None and face_material.type != FaceMaterial.DISABLE:
+            wind_modes = [0, 0, 0, 0]
+            wind_strengths = [0, 0, 0, 0]
+            for i, li in enumerate(range(face.loop_start, face.loop_start + face.loop_total)):
+                c = wind_color_layer.data[li].color
+                wind_modes[i] = round(c[0] * 255)
+                wind_strengths[i] = round(c[1] * 255)
+            if any(w != 0 for w in wind_modes):
+                vert_reindex = FACE_DIRECTION_VERT_REINDEX[d] # this remaps blender vertex index to vs index per face
+                faces[d]["windMode"] = [wind_modes[i] for i in vert_reindex]
+                faces[d]["windData"] = [wind_strengths[i] for i in vert_reindex]  # note wind strengths can be 0
+
     # ================================
     # build children
     # ================================
