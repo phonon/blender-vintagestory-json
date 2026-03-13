@@ -194,6 +194,9 @@ def index_of_vmin(
     else:
         return idx_2nd_min_x
 
+
+# MARK: Cuboid unwrap
+
 class OpUVCuboidUnwrap(bpy.types.Operator):
     """Specialized VS cuboid UV unwrap"""
 
@@ -700,6 +703,8 @@ class OpUVCuboidUnwrap(bpy.types.Operator):
         
         return {"FINISHED"}
 
+    
+# MARK: Pixel unwrap
 
 class OpUVPixelUnwrap(bpy.types.Operator):
     """Unwrap all UVs into a single pixel (for single color textures)"""
@@ -1286,6 +1291,172 @@ class OpUVPackSimpleBoundingBox(bpy.types.Operator):
             bpy.ops.object.mode_set(mode=user_mode)
         
         return {"FINISHED"}
+    
+
+# MARK: Normalize texel density
+
+class OpUVNormalizeTexels(bpy.types.Operator):
+    """Operation to make uv texels pixels uniform in size and square based
+    on a standard sizing for cuboid models in game.
+    """
+    bl_idname = "vintagestory.uv_normalize_texels"
+    bl_label = "Normalize UV Texels"
+    bl_options = {"REGISTER", "UNDO"}
+
+    texel_density: bpy.props.FloatProperty(
+        default=1.0,
+        name="Texel Density",
+        description="Scale factor: UV size = texel_density * mesh face size along each axis",
+        min=0.001,
+        soft_min=0.1,
+        soft_max=10.0,
+    )
+
+    def execute(self, context):
+        args = self.as_keywords()
+        texel_density = args.get("texel_density", 1.0)
+
+        # need to be in object mode to access context selected objects
+        user_mode = context.active_object.mode
+        if user_mode != "OBJECT":
+            need_to_switch_mode_back = True
+            bpy.ops.object.mode_set(mode="OBJECT")
+        else:
+            need_to_switch_mode_back = False
+        
+        # only perform on selected objects
+        all_objects = bpy.context.selected_objects
+        
+        # pre-filter objects to only include cuboid meshes
+        cuboids = []
+        for obj in all_objects:
+            mesh = obj.data
+            if not isinstance(mesh, bpy.types.Mesh):
+                continue
+            if len(mesh.polygons) != 6:
+                continue
+            cuboids.append(obj)
+        
+        num_cuboids = len(cuboids)
+        if num_cuboids == 0: # skip if no cuboids
+            self.report({"ERROR"}, "No cuboid meshes selected")
+            return {"FINISHED"}
+        
+        for obj in cuboids:
+            mesh = obj.data
+            uv_layer = mesh.uv_layers.active
+            if uv_layer is None:
+                continue
+            uv_data = uv_layer.data
+            matrix_world = np.asarray(obj.matrix_world)
+            
+            for face in mesh.polygons:
+                loop_start = face.loop_start
+                if face.loop_total != 4:
+                    continue
+                
+                # get 3D world-space vertices for this face
+                verts_3d = np.zeros((4, 3))
+                for k in range(4):
+                    co = mesh.vertices[face.vertices[k]].co
+                    v_local = np.array([co.x, co.y, co.z, 1.0])
+                    v_world = matrix_world @ v_local
+                    verts_3d[k] = v_world[:3]
+                
+                # get current UV coords
+                uvs = np.zeros((4, 2))
+                for k in range(4):
+                    uvs[k] = np.array(uv_data[loop_start + k].uv)
+                
+                # 3D edge lengths along the face loop
+                # edge_a: vertex 0 -> vertex 1
+                # edge_b: vertex 1 -> vertex 2
+                mesh_len_a = np.linalg.norm(verts_3d[1] - verts_3d[0])
+                mesh_len_b = np.linalg.norm(verts_3d[2] - verts_3d[1])
+                
+                # UV edge vectors and lengths (same loop edges)
+                uv_vec_a = uvs[1] - uvs[0]
+                uv_vec_b = uvs[2] - uvs[1]
+                uv_len_a = np.linalg.norm(uv_vec_a)
+                uv_len_b = np.linalg.norm(uv_vec_b)
+                
+                # skip degenerate faces
+                if uv_len_a < 1e-10 or uv_len_b < 1e-10:
+                    continue
+                if mesh_len_a < 1e-10 or mesh_len_b < 1e-10:
+                    continue
+                
+                # desired UV edge lengths = texel_density * 3D edge lengths
+                # * built-in scaling constant to make pixel density
+                # look nice by default
+                desired_a = 0.016 * texel_density * mesh_len_a
+                desired_b = 0.016 * texel_density * mesh_len_b
+                
+                # per-axis scale factors
+                scale_a = desired_a / uv_len_a
+                scale_b = desired_b / uv_len_b
+                
+                # UV center (centroid of quad)
+                uv_center = np.mean(uvs, axis=0)
+                
+                # unit direction vectors along each UV edge axis
+                uv_unit_a = uv_vec_a / uv_len_a
+                uv_unit_b = uv_vec_b / uv_len_b
+                
+                # scale each UV vertex around center along the two edge axes
+                for k in range(4):
+                    d = uvs[k] - uv_center
+                    proj_a = np.dot(d, uv_unit_a)
+                    proj_b = np.dot(d, uv_unit_b)
+                    new_uv = uv_center + scale_a * proj_a * uv_unit_a + scale_b * proj_b * uv_unit_b
+                    uv_data[loop_start + k].uv = new_uv
+            
+            # snap scaled UVs to nearest pixel if object has a texture
+            tex_w, tex_h = 0, 0
+            for slot in obj.material_slots:
+                mat = slot.material
+                if mat is None or not mat.use_nodes:
+                    continue
+                for node in mat.node_tree.nodes:
+                    if node.type == "TEX_IMAGE" and node.image is not None:
+                        tex_w, tex_h = node.image.size[0], node.image.size[1]
+                        break
+                if tex_w > 0:
+                    break
+            
+            if tex_w > 0 and tex_h > 0:
+                px = np.array([1.0 / tex_w, 1.0 / tex_h])
+                for face in mesh.polygons:
+                    loop_start = face.loop_start
+                    if face.loop_total != 4:
+                        continue
+                    
+                    # read current UVs for this face
+                    fuvs = np.zeros((4, 2))
+                    for k in range(4):
+                        fuvs[k] = np.array(uv_data[loop_start + k].uv)
+                    
+                    # snap first vertex to nearest pixel, shift all others
+                    snapped = np.round(fuvs[0] / px) * px
+                    shift = snapped - fuvs[0]
+                    fuvs += shift
+                    
+                    # round remaining vertices to nearest pixel
+                    for k in range(1, 4):
+                        fuvs[k] = np.round(fuvs[k] / px) * px
+                    
+                    for k in range(4):
+                        uv_data[loop_start + k].uv = fuvs[k]
+        
+        self.report({"INFO"}, f"Normalized texel density for {num_cuboids} cuboid(s)")
+        
+        if need_to_switch_mode_back:
+            bpy.ops.object.mode_set(mode=user_mode)
+        
+        return {"FINISHED"}
+
+
+# MARK: Disable material
 
 DISABLE_MATERIAL_ENUM = (
     # (ID, Name, Description, Icon, Number)

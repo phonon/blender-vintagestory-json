@@ -203,6 +203,12 @@ class VINTAGESTORY_PT_panel_texture_tools(bpy.types.Panel):
             icon="STICKY_UVS_LOC",
             text="UV Pack",
         )
+        # operator: uv texel scale normalize
+        layout.operator(
+            operator="vintagestory.uv_normalize_texels",
+            icon="TEXTURE",
+            text="Normalize Texels",
+        )
         # operator: disable material on export
         layout.operator_enum(
             operator="vintagestory.disable_material",
@@ -507,6 +513,7 @@ classes = [
     texture.OpTexturePixelMode,
     texture.OpUVCuboidUnwrap,
     texture.OpUVPixelUnwrap,
+    texture.OpUVNormalizeTexels,
     texture.OpUVPackSimpleBoundingBox,
     wind.OpAssignFaceWindMode,
     wind.OpClearFaceWindMode,
