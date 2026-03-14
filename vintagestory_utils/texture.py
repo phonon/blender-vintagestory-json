@@ -1355,7 +1355,26 @@ class OpUVNormalizeTexels(bpy.types.Operator):
                 if face.loop_total != 4:
                     continue
                 
-                # get 3D world-space vertices for this face
+                # skip faces with disabled material or no texture
+                if face.material_index >= len(obj.material_slots):
+                    continue
+                mat = obj.material_slots[face.material_index].material
+                if mat is None:
+                    continue
+                if mat.get("disable", False):
+                    continue
+                
+                # get texture width, height for scaling uv texel density
+                tex_w, tex_h = 0, 0
+                if mat.use_nodes:
+                    for n in mat.node_tree.nodes:
+                        if n.type == "TEX_IMAGE" and n.image is not None:
+                            tex_w, tex_h = n.image.size[0], n.image.size[1]
+                            break
+                if tex_w == 0 or tex_h == 0:
+                    continue
+                                
+                # get 3D world-space vertices for face
                 verts_3d = np.zeros((4, 3))
                 for k in range(4):
                     co = mesh.vertices[face.vertices[k]].co
@@ -1385,31 +1404,28 @@ class OpUVNormalizeTexels(bpy.types.Operator):
                     continue
                 if mesh_len_a < 1e-10 or mesh_len_b < 1e-10:
                     continue
-                
-                # desired UV edge lengths = texel_density * 3D edge lengths
-                # * built-in scaling constant to make pixel density
-                # look nice by default
-                desired_a = 0.016 * texel_density * mesh_len_a
-                desired_b = 0.016 * texel_density * mesh_len_b
-                
-                # per-axis scale factors
-                scale_a = desired_a / uv_len_a
-                scale_b = desired_b / uv_len_b
-                
-                # UV center (centroid of quad)
-                uv_center = np.mean(uvs, axis=0)
-                
-                # unit direction vectors along each UV edge axis
+
+                # unit vectors along uv axes
                 uv_unit_a = uv_vec_a / uv_len_a
                 uv_unit_b = uv_vec_b / uv_len_b
                 
-                # scale each UV vertex around center along the two edge axes
-                for k in range(4):
-                    d = uvs[k] - uv_center
-                    proj_a = np.dot(d, uv_unit_a)
-                    proj_b = np.dot(d, uv_unit_b)
-                    new_uv = uv_center + scale_a * proj_a * uv_unit_a + scale_b * proj_b * uv_unit_b
-                    uv_data[loop_start + k].uv = new_uv
+                # determine tex size along a, b axes based on x, y
+                uv_a_tex_size = tex_w * uv_unit_a[0] + tex_h * uv_unit_a[1]
+                uv_b_tex_size = tex_w * uv_unit_b[0] + tex_h * uv_unit_b[1]
+
+                # desired UV edge lengths = 
+                # 3D edge lengths
+                # * texel_density / texture size (for pixel density consistency)
+                # * built-in scaling constant to make pixel density
+                # look nice by default (derived for default 64x64 size)
+                uv_desired_a = 1.843 * texel_density / uv_a_tex_size * mesh_len_a
+                uv_desired_b = 1.843 * texel_density / uv_b_tex_size * mesh_len_b
+
+                # rewrite uvs: take first vertex as origin, then set uv offset from it
+                uv0 = np.array(uv_data[loop_start].uv)
+                uv_data[loop_start + 1].uv = uv0 + uv_unit_a * uv_desired_a
+                uv_data[loop_start + 2].uv = uv0 + uv_unit_a * uv_desired_a + uv_unit_b * uv_desired_b
+                uv_data[loop_start + 3].uv = uv0 + uv_unit_b * uv_desired_b 
             
             # snap scaled UVs to nearest pixel if object has a texture
             tex_w, tex_h = 0, 0
