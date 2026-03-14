@@ -215,6 +215,12 @@ class VINTAGESTORY_PT_panel_texture_tools(bpy.types.Panel):
             property="disable",
             icon_only=False,
         )
+        # operator: move disabled tex uv to corner
+        layout.operator(
+            operator="vintagestory.disabled_uv_to_corner",
+            icon="TEXTURE",
+            text="Disabled UV To Corner",
+        )
         # operator: assign object glow
         layout.operator(
             operator="vintagestory.assign_glow",
@@ -510,6 +516,7 @@ classes = [
     animation.OpMakeKeyframeInterpolationLinear,
     texture.OpAssignGlow,
     texture.OpDisableMaterial,
+    texture.OpDisabledUVToCorner,
     texture.OpTexturePixelMode,
     texture.OpUVCuboidUnwrap,
     texture.OpUVPixelUnwrap,

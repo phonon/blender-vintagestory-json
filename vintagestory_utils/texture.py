@@ -1509,6 +1509,123 @@ class OpDisableMaterial(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class OpDisabledUVToCorner(bpy.types.Operator):
+    """Move disabled texture face uvs to a 1x1 pixel corner position."""
+    bl_idname = "vintagestory.disabled_uv_to_corner"
+    bl_label = "Disabled To Corner"
+    bl_options = {"REGISTER", "UNDO"}
+
+    corner: bpy.props.EnumProperty(
+        items=[ # (identifier, name, description)
+            ("topleft", "Top Left", "Top Left"),
+            ("botleft", "Bottom Left", "Bottom Left"),
+            ("topright", "Top Right", "Top Right"),
+            ("botright", "Bottom Right", "Bottom Right"),
+        ],
+        default="botleft",
+        name="Corner",
+        description="Corner position for disabled texture",
+    )
+
+    def execute(self, context):
+        args = self.as_keywords()
+
+        # need to be in object mode to access context selected objects
+        user_mode = context.active_object.mode
+        if user_mode != "OBJECT":
+            need_to_switch_mode_back = True
+            bpy.ops.object.mode_set(mode="OBJECT")
+        else:
+            need_to_switch_mode_back = False
+        
+        # only perform on selected objects
+        all_objects = bpy.context.selected_objects
+        
+        # pre-filter objects to only include cuboid meshes
+        cuboids = []
+        for obj in all_objects:
+            mesh = obj.data
+            if not isinstance(mesh, bpy.types.Mesh):
+                continue
+            if len(mesh.polygons) != 6:
+                continue
+            cuboids.append(obj)
+        
+        num_cuboids = len(cuboids)
+        if num_cuboids == 0: # skip if no cuboids
+            self.report({"ERROR"}, "No cuboid meshes selected")
+            return {"FINISHED"}
+        
+        # move UVs of disabled texture faces to corner
+        corner = args.get("corner", "botleft")
+        moved_count = 0
+
+        for obj in cuboids:
+            mesh = obj.data
+            uv_layer = mesh.uv_layers.active
+            if uv_layer is None:
+                continue
+            uv_data = uv_layer.data
+
+            for face in mesh.polygons:
+                if face.loop_total != 4:
+                    continue
+                if face.material_index >= len(obj.material_slots):
+                    continue
+                
+                slot = obj.material_slots[face.material_index]
+                material = slot.material
+                if material is None:
+                    continue
+                
+                # check if material has "disable" custom property set to True
+                if not material.get("disable", False):
+                    continue
+                
+                # find texture size from material nodes
+                tex_w, tex_h = 0, 0
+                if material.use_nodes:
+                    for node in material.node_tree.nodes:
+                        if node.type == "TEX_IMAGE" and node.image is not None:
+                            tex_w, tex_h = node.image.size[0], node.image.size[1]
+                            break
+                
+                if tex_w == 0 or tex_h == 0:
+                    continue
+                
+                # calculate 1x1 pixel size in UV space
+                px_u = 1.0 / tex_w
+                px_h = 1.0 / tex_h
+
+                # determine corner UV coordinates for a 1x1 pixel quad
+                if corner == "botleft":
+                    u0, v0 = 0.0, 0.0
+                elif corner == "topleft":
+                    u0, v0 = 0.0, 1.0 - px_h
+                elif corner == "botright":
+                    u0, v0 = 1.0 - px_u, 0.0
+                elif corner == "topright":
+                    u0, v0 = 1.0 - px_u, 1.0 - px_h
+                else:
+                    u0, v0 = 0.0, 0.0
+
+                loop_start = face.loop_start
+                uv_data[loop_start].uv     = (u0,        v0)
+                uv_data[loop_start + 1].uv = (u0 + px_u, v0)
+                uv_data[loop_start + 2].uv = (u0 + px_u, v0 + px_h)
+                uv_data[loop_start + 3].uv = (u0,        v0 + px_h)
+                moved_count += 1
+        
+        self.report({"INFO"}, f"Moved {moved_count} disabled face(s) to {corner} corner")
+        
+        if need_to_switch_mode_back:
+            bpy.ops.object.mode_set(mode=user_mode)
+        
+        return {"FINISHED"}
+
+
+# MARK: Glow
+
 class OpAssignGlow(bpy.types.Operator):
     """Assign glow custom property to object (0 to remove)"""
     bl_idname = "vintagestory.assign_glow"
