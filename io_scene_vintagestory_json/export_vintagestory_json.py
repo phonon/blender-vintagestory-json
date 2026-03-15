@@ -410,8 +410,8 @@ def generate_mesh_element(
     parent_rotation_origin=None,   # parent object rotation origin (coords in VintageStory space)
     export_uvs=True,               # export uvs
     export_generated_texture=True,
-    texture_size_x_override=None,  # override texture size x
-    texture_size_y_override=None,  # override texture size y
+    texture_size_x_override=0,     # override texture size x if > 0
+    texture_size_y_override=0,     # override texture size y if > 0
 ):
     """Recursive function to generate output element from
     Blender object
@@ -1398,8 +1398,8 @@ def save_objects_by_armature(
     parent_rotation_origin=np.array([0., 0., 0.]),
     export_uvs=True,               # export uvs
     export_generated_texture=True, # export generated color texture
-    texture_size_x_override=None,  # texture size overrides
-    texture_size_y_override=None,  # texture size overrides
+    texture_size_x_override=0,     # texture size overrides
+    texture_size_y_override=0,     # texture size overrides
     use_main_object_as_bone=True,  # allow using main object as bone
 ):
     """Recursively save object children of a bone to a parent
@@ -1530,8 +1530,8 @@ def save_objects(
     generate_texture=True,
     use_only_exported_object_colors=False,
     color_texture_filename="",
-    texture_size_x_override=None, # override texture image size x
-    texture_size_y_override=None, # override texture image size y
+    texture_size_x_override=0, # override texture image size x
+    texture_size_y_override=0, # override texture image size y
     export_uvs=True,
     skip_texture_export=False,
     minify=False,
@@ -1627,8 +1627,8 @@ def save_objects(
     # output json model stub
     model_json = {
         # default texture sizes, will be overridden
-        "textureWidth": 16 if texture_size_x_override is None else texture_size_x_override,
-        "textureHeight": 16 if texture_size_y_override is None else texture_size_y_override,
+        "textureWidth": texture_size_x_override, # default == 0
+        "textureHeight": texture_size_y_override,
         "textures": {},
         "textureSizes": {},
     }
@@ -1787,6 +1787,9 @@ def save_objects(
         # write texture info to output model
         model_json["textureSizes"]["0"] = [tex_size, tex_size]
         model_json["textures"]["0"] = texture_model_path
+        if model_json["textureWidth"] == 0:
+            model_json["textureWidth"] = tex_size
+            model_json["textureHeight"] = tex_size
     else:
         color_tex_uv_map = None
         default_color_uv = None
@@ -1816,11 +1819,17 @@ def save_objects(
             texture_refs[material.name] = "#" + material.name
             model_json["textures"][material.name] = posixpath.join(texture_folder, texture_filename)
             
-            tex_size_x = material.texture_size[0] if texture_size_x_override is None else texture_size_x_override
-            tex_size_y = material.texture_size[1] if texture_size_y_override is None else texture_size_y_override
+            tex_size_x = material.texture_size[0] if texture_size_x_override <= 0 else texture_size_x_override
+            tex_size_y = material.texture_size[1] if texture_size_y_override <= 0 else texture_size_y_override
 
             model_json["textureSizes"][material.name] = [tex_size_x, tex_size_y]
 
+            # set default texture width/height to first material texture size
+            # if not already overriden by user export settings
+            if model_json["textureWidth"] == 0:
+                model_json["textureWidth"] = tex_size_x
+                model_json["textureHeight"] = tex_size_y
+    
     # =========================================================================
     # Origin shift post-processing
     # =========================================================================

@@ -100,14 +100,6 @@ def run_export(
     else:
         args["translate_origin"] = None
     
-    # remap texture size overrides value 0 => None
-    if "texture_size_x_override" in args:
-        if args["texture_size_x_override"] == 0:
-            args["texture_size_x_override"] = None
-    if "texture_size_y_override" in args:
-        if args["texture_size_y_override"] == 0:
-            args["texture_size_y_override"] = None
-    
     result, msg_type, msg = export_vintagestory_json.save_objects(
         logger=op,
         **args,
