@@ -1410,8 +1410,8 @@ class OpUVNormalizeTexels(bpy.types.Operator):
                 uv_unit_b = uv_vec_b / uv_len_b
                 
                 # determine tex size along a, b axes based on x, y
-                uv_a_tex_size = tex_w * uv_unit_a[0] + tex_h * uv_unit_a[1]
-                uv_b_tex_size = tex_w * uv_unit_b[0] + tex_h * uv_unit_b[1]
+                uv_a_tex_size = abs(tex_w * uv_unit_a[0] + tex_h * uv_unit_a[1])
+                uv_b_tex_size = abs(tex_w * uv_unit_b[0] + tex_h * uv_unit_b[1])
 
                 # desired UV edge lengths = 
                 # 3D edge lengths
