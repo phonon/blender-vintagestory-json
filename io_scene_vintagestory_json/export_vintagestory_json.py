@@ -617,8 +617,8 @@ def generate_mesh_element(
             if face_material.glow > 0:
                 faces[d]["glow"] = face_material.glow
 
-            tex_width = face_material.texture_size[0] if texture_size_x_override is None else texture_size_x_override
-            tex_height = face_material.texture_size[1] if texture_size_y_override is None else texture_size_y_override
+            tex_width = face_material.texture_size[0] if texture_size_x_override <= 0 else texture_size_x_override
+            tex_height = face_material.texture_size[1] if texture_size_y_override <= 0 else texture_size_y_override
 
             if export_uvs:
                 # uv loop
