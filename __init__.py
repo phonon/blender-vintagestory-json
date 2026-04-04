@@ -2,7 +2,7 @@ bl_info = {
     "name": "Vintage Story JSON Import/Export",
     "description": "Vintage Story JSON import/export",
     "author": "phonon",
-    "version": (0, 8, 1),
+    "version": (0, 8, 2),
     "blender": (4, 5, 2),
     "location": "File > Import-Export",
     "warning": "",
