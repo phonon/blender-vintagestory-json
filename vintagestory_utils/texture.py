@@ -1312,9 +1312,25 @@ class OpUVNormalizeTexels(bpy.types.Operator):
         soft_max=10.0,
     )
 
+    min_uv_width: bpy.props.IntProperty(
+        default=1,
+        name="Min UV Width",
+        description="Minimum UV face width in pixels",
+        min=1,
+    )
+
+    min_uv_height: bpy.props.IntProperty(
+        default=1,
+        name="Min UV Height",
+        description="Minimum UV face height in pixels",
+        min=1,
+    )
+
     def execute(self, context):
         args = self.as_keywords()
         texel_density = args.get("texel_density", 1.0)
+        min_uv_width = args.get("min_uv_width", 1)
+        min_uv_height = args.get("min_uv_height", 1)
 
         # need to be in object mode to access context selected objects
         user_mode = context.active_object.mode
@@ -1392,18 +1408,40 @@ class OpUVNormalizeTexels(bpy.types.Operator):
                 # edge_b: vertex 1 -> vertex 2
                 mesh_len_a = np.linalg.norm(verts_3d[1] - verts_3d[0])
                 mesh_len_b = np.linalg.norm(verts_3d[2] - verts_3d[1])
+
+                # skip degenerate mesh faces
+                if mesh_len_a < 1e-10 or mesh_len_b < 1e-10:
+                    continue
                 
                 # UV edge vectors and lengths (same loop edges)
                 uv_vec_a = uvs[1] - uvs[0]
                 uv_vec_b = uvs[2] - uvs[1]
                 uv_len_a = np.linalg.norm(uv_vec_a)
                 uv_len_b = np.linalg.norm(uv_vec_b)
-                
-                # skip degenerate faces
-                if uv_len_a < 1e-10 or uv_len_b < 1e-10:
-                    continue
-                if mesh_len_a < 1e-10 or mesh_len_b < 1e-10:
-                    continue
+
+                # handle degenerate UV faces (zero length sides)
+                # by assigning arbitrary UV edge vectors (e.g. along x and y axes)
+                if uv_len_a < 1e-10 and uv_len_b < 1e-10:
+                    uv_vec_a = np.array([1.0, 0.0])
+                    uv_vec_b = np.array([0.0, 1.0])
+                    uv_len_a = 1.0
+                    uv_len_b = 1.0
+                else: # only one side is degenerate (zero length)
+                    if uv_len_a < 1e-10:
+                        # set uv_vec_a perpendicular to uv_vec_b:
+                        # use whichever axis is not dominant in uv_vec_b
+                        if abs(uv_vec_b[0]) > abs(uv_vec_b[1]):
+                            uv_vec_a = np.array([0.0, 1.0])
+                        else:
+                            uv_vec_a = np.array([1.0, 0.0])
+                        uv_len_a = 1.0
+                    if uv_len_b < 1e-10:
+                        # set uv_vec_b perpendicular to uv_vec_a:
+                        if abs(uv_vec_a[0]) > abs(uv_vec_a[1]):
+                            uv_vec_b = np.array([0.0, 1.0])
+                        else:
+                            uv_vec_b = np.array([1.0, 0.0])
+                        uv_len_b = 1.0
 
                 # unit vectors along uv axes
                 uv_unit_a = uv_vec_a / uv_len_a
@@ -1420,6 +1458,15 @@ class OpUVNormalizeTexels(bpy.types.Operator):
                 # look nice by default (derived for default 64x64 size)
                 uv_desired_a = 1.843 * texel_density / uv_a_tex_size * mesh_len_a
                 uv_desired_b = 1.843 * texel_density / uv_b_tex_size * mesh_len_b
+
+                # clamp to minimum uv width (x) and height (y) in pixels
+                # determine width and height based on uv vec
+                if abs(uv_unit_a[0]) > abs(uv_unit_a[1]): # uv_vec_a is x-axis
+                    uv_desired_a = max(uv_desired_a, min_uv_width / tex_w)
+                    uv_desired_b = max(uv_desired_b, min_uv_height / tex_h)
+                else: # uv_vec_a is y-axis
+                    uv_desired_a = max(uv_desired_a, min_uv_height / tex_h)
+                    uv_desired_b = max(uv_desired_b, min_uv_width / tex_w)
 
                 # rewrite uvs: take first vertex as origin, then set uv offset from it
                 uv0 = np.array(uv_data[loop_start].uv)
